@@ -54,7 +54,11 @@ These are the builder's calls, recorded so they are not re-litigated:
 | Bluetooth core | `crates/core` defines `BleTransport` (subscribe returns a `Stream`), `DeviceKey` resolver | macOS never exposes the MAC — scan-and-match by advertised name there; use address directly elsewhere. |
 | License | **GPL-3.0-or-later** | Slint's OSS license is GPL-3.0; prior art in this space is GPL/AGPL. Compatible and honest. |
 | Repo visibility | **Public** | "Open source" was explicit; public gives free Actions, security features, arm64 runners. |
-| AI layer | Optional, opt-in, cloud; never on by default | Operator accepts cloud inference; local-first default preserved. Raw frame always shown beside interpretation. |
+| AI layer | Optional, opt-in, **bring-your-own-key** against a configurable OpenAI-compatible endpoint | No OpenWatch account or service; feature is off with no key. Only the user-selected value/frame text plus short context is sent, and the exact payload is shown before sending. Raw frame always shown beside interpretation. |
+| Weather source | **Manual entry in v1**; pluggable provider interface only | Keeps the no-cloud promise; a live provider would add a key and a network dependency for one feature. |
+| Firmware verdict | Show **installed version** and a neutral "not checked" state; no automatic "up to date" claim in v1 | "Latest" needs either a vendor endpoint (cloud) or a bundled manifest that goes stale; neither is worth a false promise. |
+| Notifications | **Watch-side message-app list** (`B9{20,0}`) in v1; OS notification forwarding deferred | The watch-side list is a known read/write setting; OS forwarding is a separate cross-platform subsystem per platform. |
+| Face designer | **Raw face upload + preview in the advanced section** in v1; WYSIWYG designer deferred | Face upload is unverified (`U`); a designer needs verified asset/format behavior first. |
 | Data store | Structured local file store (SQLite via `rusqlite`), UTC timestamps | Avoids the comma-separated-string and fake-epoch anti-patterns seen in prior art. |
 | Naming | OpenWatch; crate names `openwatch-core`, `openwatch-desktop`, `openwatch-android` | One product name everywhere. |
 
@@ -99,6 +103,7 @@ other-message state, watch-face layout, auto-HR index, battery.
 - Time system `0x17`, DND `0x71`, auto-HR `0x1F`, quiet hours — S.
 - Alarm set/delete `B9{05,00|02,…}` — S.
 - Weather `0x43` today / `0x42` 7-day / `0xB5` sun; `0x64` is watch→phone only — S.
+  Values are entered manually in v1; no weather provider is bundled.
 - Live HR `0x6D {00}` → `{bpm}` or `{FF}` busy — L.
 - Face upload, DFU, AGPS, OTA — U; exposed in the advanced section behind explicit confirmation.
 
@@ -108,7 +113,8 @@ other-message state, watch-face layout, auto-HR index, battery.
 - **Legacy console features to recover from ledger/source**: camera `0x66`, ring `0x62`,
   move reminders `0x83`, women's health `0x85`, message-app list `B9{20,0}`, stress chart,
   continuous-HR live list, diagnostics sweep, OTA check, AGPS, face designer. All tagged `U`
-  until live-verified; never silently presented as working.
+  until live-verified; never silently presented as working. A full WYSIWYG face designer is
+  deferred — v1 offers raw upload plus a layout preview derived from `0x39`.
 
 ### Device support
 - Fire-Boltt 039: full support.
@@ -120,8 +126,8 @@ other-message state, watch-face layout, auto-HR index, battery.
 1. **Today** — reorderable metric cards (steps, HR, battery, sleep/stress), connection strip
    (battery, last sync, Sync now), and a "Control" affordance on every card so the dashboard is
    editable, not read-only.
-2. **Device** — identity, firmware, all settings, per-app notifications, alarms, goals, faces,
-   firmware status ("up to date" surfaced, not buried).
+2. **Device** — identity, installed firmware, all settings, watch-side message-app list, alarms,
+   goals, faces, and firmware version (no automatic verdict in v1).
 3. **Workbench** — raw inspector, AI interpretation panel, advanced/mod opcodes, diagnostics.
 4. **Data** — history, charts, local store, export/delete, units.
 
@@ -160,6 +166,12 @@ workbench; source-derived features carry a visible "unverified" tag; sync never 
 
 ## 9. Open questions for the operator
 
-None required to start. Decisions above are recorded as the builder's calls. The only
-operator-specific input still missing is whether the Noise NSW-434 should get real protocol
-work before Fire-Boltt parity is complete; until answered, it stays scaffolded.
+1. **Live verification and state-changing writes.** Should the build assume a charged, worn
+   watch and blanket approval to exercise setters so `S` opcodes can be promoted to `L`, or must
+   everything ship as `S`/`U` with fixture tests only? This changes acceptance criteria and
+   sequencing, not the feature set.
+
+Recorded calls, not questions: Fire-Boltt parity comes before NSW-434 protocol work (NSW stays
+scaffolded); BYOK AI with no account; manual weather in v1; installed-firmware-only with no
+automatic verdict; watch-side message-app list instead of OS forwarding; raw face upload instead
+of a WYSIWYG designer.
