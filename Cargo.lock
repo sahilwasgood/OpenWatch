@@ -3300,7 +3300,9 @@ dependencies = [
 name = "openwatch-ui"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "openwatch-core",
+ "serde_json",
  "slint",
  "slint-build",
  "thiserror 2.0.21",

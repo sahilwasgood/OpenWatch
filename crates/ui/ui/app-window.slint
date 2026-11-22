@@ -2,6 +2,7 @@
 import { Theme, GlassCard, Navigation } from "theme.slint";
 import { TodaySurface, CardView } from "today.slint";
 import { DeviceSurface, RowView } from "device.slint";
+import { WorkbenchSurface, FrameView, ActionView } from "workbench.slint";
 
 // A destination pane uses the short reduced-motion cross-fade rather than the
 // full 250 ms state transition when the active destination changes.
@@ -132,6 +133,79 @@ component DevicePane inherits Rectangle {
     }
 }
 
+component WorkbenchPane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <[FrameView]> frames: [];
+    in property <[ActionView]> actions: [];
+    in property <int> selected-frame: -1;
+    in property <string> selected-time: "";
+    in property <string> selected-direction: "";
+    in property <string> selected-cmd: "";
+    in property <string> selected-opcode: "";
+    in property <string> selected-confidence: "";
+    in property <string> selected-hex: "";
+    in-out property <string> note: "";
+    in-out property <string> endpoint: "";
+    in-out property <string> key: "";
+    in property <bool> has-key: false;
+    in property <string> preview: "";
+    in property <string> explanation: "";
+    in property <string> status: "";
+    in property <string> pending: "";
+    in property <string> confirmed: "";
+    callback select-frame(int);
+    callback preview-payload();
+    callback explain-frame();
+    callback request-action(string);
+    callback confirm-action();
+    callback cancel-action();
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    WorkbenchSurface {
+        width: 100%;
+        height: 100%;
+        frames: root.frames;
+        actions: root.actions;
+        selected-frame: root.selected-frame;
+        selected-time: root.selected-time;
+        selected-direction: root.selected-direction;
+        selected-cmd: root.selected-cmd;
+        selected-opcode: root.selected-opcode;
+        selected-confidence: root.selected-confidence;
+        selected-hex: root.selected-hex;
+        note <=> root.note;
+        endpoint <=> root.endpoint;
+        key <=> root.key;
+        has-key: root.has-key;
+        preview: root.preview;
+        explanation: root.explanation;
+        status: root.status;
+        pending: root.pending;
+        confirmed: root.confirmed;
+        select-frame(id) => { root.select-frame(id); }
+        preview-payload() => { root.preview-payload(); }
+        explain-frame() => { root.explain-frame(); }
+        request-action(key) => { root.request-action(key); }
+        confirm-action() => { root.confirm-action(); }
+        cancel-action() => { root.cancel-action(); }
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
 export component AppWindow inherits Window {
     // State applied by the Rust bridge.
     in-out property <string> device-name: "—";
@@ -142,6 +216,32 @@ export component AppWindow inherits Window {
     in-out property <[CardView]> metric-cards: [];
     in-out property <[RowView]> device-values: [];
     callback reorder-card(string, int);
+
+    // Workbench raw inspector and opt-in AI panel.
+    in-out property <[FrameView]> frames: [];
+    in-out property <[ActionView]> actions: [];
+    in-out property <int> selected-frame: -1;
+    in-out property <string> selected-time: "";
+    in-out property <string> selected-direction: "";
+    in-out property <string> selected-cmd: "";
+    in-out property <string> selected-opcode: "";
+    in-out property <string> selected-confidence: "";
+    in-out property <string> selected-hex: "";
+    in-out property <string> wb-note: "";
+    in-out property <string> wb-endpoint: "";
+    in-out property <string> wb-key: "";
+    in-out property <bool> wb-has-key: false;
+    in-out property <string> wb-preview: "";
+    in-out property <string> wb-explanation: "";
+    in-out property <string> wb-status: "";
+    in-out property <string> wb-pending: "";
+    in-out property <string> wb-confirmed: "";
+    callback select-frame(int);
+    callback preview-payload();
+    callback explain-frame();
+    callback request-action(string);
+    callback confirm-action();
+    callback cancel-action();
 
     // Accessibility toggles (Slint 1.19 has no system detection for these).
     in property <bool> reduced-transparency: false;
@@ -325,12 +425,34 @@ export component AppWindow inherits Window {
             high-contrast: root.high-contrast;
             rows: root.device-values;
         }
-        DestinationPane {
+        WorkbenchPane {
             active: root.active-tab == 2;
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
-            heading: "Workbench";
-            detail: "Raw inspector and interpretation.";
+            frames: root.frames;
+            actions: root.actions;
+            selected-frame: root.selected-frame;
+            selected-time: root.selected-time;
+            selected-direction: root.selected-direction;
+            selected-cmd: root.selected-cmd;
+            selected-opcode: root.selected-opcode;
+            selected-confidence: root.selected-confidence;
+            selected-hex: root.selected-hex;
+            note <=> root.wb-note;
+            endpoint <=> root.wb-endpoint;
+            key <=> root.wb-key;
+            has-key: root.wb-has-key;
+            preview: root.wb-preview;
+            explanation: root.wb-explanation;
+            status: root.wb-status;
+            pending: root.wb-pending;
+            confirmed: root.wb-confirmed;
+            select-frame(id) => { root.select-frame(id); }
+            preview-payload() => { root.preview-payload(); }
+            explain-frame() => { root.explain-frame(); }
+            request-action(key) => { root.request-action(key); }
+            confirm-action() => { root.confirm-action(); }
+            cancel-action() => { root.cancel-action(); }
         }
         DestinationPane {
             active: root.active-tab == 3;

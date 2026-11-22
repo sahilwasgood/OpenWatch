@@ -6,17 +6,31 @@
 
 slint::include_modules!();
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use slint::ComponentHandle;
 
+pub mod ai;
 pub mod bridge;
+pub mod data_view;
 
 pub use bridge::{Action, AppError, AppState, DeviceLink, Reading, UiOptions};
+use data_view::WorkbenchData;
 
 /// Build, populate and run the shell with supplied state and options.
 pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
     let window = AppWindow::new()?;
     let state = std::rc::Rc::new(std::cell::RefCell::new(state));
     state.borrow().apply_to(&window, &options);
+
+    let workbench = Rc::new(RefCell::new(WorkbenchData::default()));
+    window.set_wb_endpoint(slint::SharedString::from(workbench.borrow().endpoint()));
+    {
+        let mut wb = workbench.borrow_mut();
+        wb.set_frames(state.borrow().stored_frames(200).unwrap_or_default());
+        wb.apply_to(&window);
+    }
 
     let shared = state.clone();
     let view = window.clone_strong();
@@ -26,6 +40,90 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
         state.move_card(&key, delta);
         state.apply_cards(&view);
     });
+
+    {
+        let shared = workbench.clone();
+        let view = window.clone_strong();
+        window.on_select_frame(move |id| {
+            let mut wb = shared.borrow_mut();
+            wb.select(id);
+            wb.apply_to(&view);
+        });
+    }
+
+    {
+        let shared = workbench.clone();
+        let view = window.clone_strong();
+        window.on_preview_payload(move || {
+            let mut wb = shared.borrow_mut();
+            wb.set_note(view.get_wb_note().to_string());
+            wb.preview();
+            wb.apply_to(&view);
+        });
+    }
+
+    {
+        let shared = workbench.clone();
+        let view = window.clone_strong();
+        window.on_explain_frame(move || {
+            let (config, hex) = {
+                let mut wb = shared.borrow_mut();
+                wb.set_note(view.get_wb_note().to_string());
+                wb.set_endpoint(view.get_wb_endpoint().to_string());
+                wb.set_key(view.get_wb_key().to_string());
+                // No key means off: no transport is constructed or called.
+                if !ai::enabled(&wb.config()) {
+                    wb.set_explanation(Err(ai::AiError::Disabled));
+                    wb.apply_to(&view);
+                    return;
+                }
+                let Some(hex) = wb.selected_hex().map(str::to_string) else {
+                    wb.set_explanation(Err(ai::AiError::Response("select a frame first".into())));
+                    wb.apply_to(&view);
+                    return;
+                };
+                let config = wb.config();
+                wb.mark_sending();
+                wb.apply_to(&view);
+                (config, hex)
+            };
+            // shortcut: synchronous POST keeps the generated window handle off
+            // other threads (it is !Send); move to a channel + timer if a call
+            // ever takes long enough to block the UI.
+            let result = ai::explain_blocking(&config, &hex);
+            let mut wb = shared.borrow_mut();
+            wb.set_explanation(result);
+            wb.apply_to(&view);
+        });
+    }
+
+    {
+        let shared = workbench.clone();
+        let view = window.clone_strong();
+        window.on_request_action(move |key| {
+            let mut wb = shared.borrow_mut();
+            wb.request_action(&key);
+            wb.apply_to(&view);
+        });
+    }
+    {
+        let shared = workbench.clone();
+        let view = window.clone_strong();
+        window.on_confirm_action(move || {
+            let mut wb = shared.borrow_mut();
+            wb.confirm_action();
+            wb.apply_to(&view);
+        });
+    }
+    {
+        let shared = workbench.clone();
+        let view = window.clone_strong();
+        window.on_cancel_action(move || {
+            let mut wb = shared.borrow_mut();
+            wb.cancel_action();
+            wb.apply_to(&view);
+        });
+    }
 
     window.run()?;
     Ok(())
@@ -131,5 +229,28 @@ mod tests {
         let first_right = 12 + (step - 24);
         let next_left = step + 12;
         assert!(first_right < next_left, "same-band columns overlap");
+    }
+
+    #[test]
+    fn workbench_is_the_only_hex_surface() {
+        let workbench = include_str!("../ui/workbench.slint");
+        for token in [
+            "Frame hex",
+            "Source frame:",
+            "Exact payload (review before send)",
+            "S source / U unverified",
+            "Confirm",
+        ] {
+            assert!(workbench.contains(token), "workbench lost {token}");
+        }
+        for surface in [
+            include_str!("../ui/today.slint"),
+            include_str!("../ui/device.slint"),
+        ] {
+            assert!(
+                !surface.contains("frame-hex"),
+                "hex leaked into a human surface"
+            );
+        }
     }
 }

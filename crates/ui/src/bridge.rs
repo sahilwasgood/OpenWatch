@@ -14,7 +14,7 @@ use openwatch_core::connection::ConnectionState;
 use openwatch_core::protocol::command;
 use openwatch_core::protocol::decode::{decode, Value};
 use openwatch_core::protocol::frame::Frame;
-use openwatch_core::store::Store;
+use openwatch_core::store::{FrameRow, Store};
 use slint::{ModelRc, SharedString, VecModel};
 use thiserror::Error;
 
@@ -176,7 +176,7 @@ fn system_now() -> i64 {
 }
 
 /// Format UTC epoch seconds without pulling a date-time crate into the UI.
-fn utc_label(unix: i64) -> String {
+pub(crate) fn utc_label(unix: i64) -> String {
     let days = unix.div_euclid(86_400);
     let seconds = unix.rem_euclid(86_400);
     let leap = |year: i64| year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
@@ -255,6 +255,15 @@ impl AppState {
     pub fn with_store(mut self, store: Store) -> Self {
         self.store = Some(store);
         self
+    }
+
+    /// Most-recent frames for the Workbench raw inspector. No store configured
+    /// means no frames; the surface stays empty rather than inventing data.
+    pub fn stored_frames(&self, limit: i64) -> Result<Vec<FrameRow>, AppError> {
+        match &self.store {
+            Some(store) => Ok(store.frames(limit)?),
+            None => Ok(Vec::new()),
+        }
     }
 
     pub fn reading(&self, key: &str) -> Option<&Reading> {
