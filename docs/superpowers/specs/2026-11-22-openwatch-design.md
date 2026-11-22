@@ -100,8 +100,8 @@ other-message state, watch-face layout, auto-HR index, battery.
 - Time sync `0x31` — L, fire-and-forget.
 - Message push `0x41 {0x80, UTF-8 ≤240 B}` — L, transient, never retried.
 - Step goal `0x16` BE32 (query `0x26` LE32) — L; watch recomputes a derived goal on write.
-- Time system `0x17`, DND `0x71`, auto-HR `0x1F`, quiet hours — S.
-- Alarm set/delete `B9{05,00|02,…}` — S.
+- Time system `0x17`, DND `0x71`, auto-HR `0x1F`, quiet hours — L (readback-confirmed).
+- Alarm set/delete `B9{05,00|02,…}` — L (dump-confirmed).
 - Weather `0x43` today / `0x42` 7-day / `0xB5` sun; `0x64` is watch→phone only — S.
   Values are entered manually in v1; no weather provider is bundled.
 - Live HR `0x6D {00}` → `{bpm}` or `{FF}` busy — L.
@@ -170,6 +170,14 @@ workbench; source-derived features carry a visible "unverified" tag; sync never 
 State-changing writes are approved for the purposes of verification; where practical, restore the
 original value afterward and record before/after reads. The build loop includes a hardware pass
 that updates the confidence registry from `S`/`U` to `L` with captured frames and timestamps.
+
+The hardware pass is the ignored harness at `crates/core/tests/live/verify.rs`, driven by
+`cargo test -p openwatch-core --test verify -- --ignored --nocapture` with the additional
+explicit `OPENWATCH_LIVE_VERIFY=1` opt-in. It runs the 20 dashboard reads plus battery, exercises
+the verified writes (restoring originals where practical), and writes exact frames with UTC
+timestamps to `docs/protocol/verification-log-generated.md`. A non-ignored guard test asserts
+the harness stays ignored, so a plain `cargo test` never touches the watch. Destructive
+file-channel commands (face upload, DFU, AGPS, OTA) are never sent by the harness.
 
 Recorded calls, not questions: Fire-Boltt parity comes before NSW-434 protocol work (NSW stays
 scaffolded); BYOK AI with no account; manual weather in v1; installed-firmware-only with no
