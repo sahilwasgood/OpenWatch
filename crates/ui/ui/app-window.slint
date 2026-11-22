@@ -153,7 +153,7 @@ export component AppWindow inherits Window {
         }
         // Numbers sit on a near-opaque content surface above the glass.
         Rectangle {
-            x: root.width - 440px;
+            x: parent.width - 440px;
             y: 12px;
             width: 88px;
             height: 32px;
@@ -169,7 +169,7 @@ export component AppWindow inherits Window {
             }
         }
         Rectangle {
-            x: root.width - 340px;
+            x: parent.width - 340px;
             y: 24px;
             width: 8px;
             height: 8px;
@@ -181,14 +181,14 @@ export component AppWindow inherits Window {
             }
         }
         Text {
-            x: root.width - 324px;
+            x: parent.width - 324px;
             y: 16px;
             text: root.connection-state;
             color: root.high-contrast ? Theme.text-primary : root.status-color;
             font-size: Theme.font-caption;
         }
         Text {
-            x: root.width - 240px;
+            x: parent.width - 240px;
             y: 16px;
             text: "Synced \{root.last-sync}";
             color: Theme.text-secondary;
@@ -196,7 +196,7 @@ export component AppWindow inherits Window {
         }
         // Primary action: 120 ms press feedback.
         Rectangle {
-            x: root.width - 150px;
+            x: parent.width - 150px;
             y: 12px;
             width: 110px;
             height: 32px;
