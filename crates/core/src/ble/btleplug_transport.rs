@@ -55,27 +55,20 @@ impl BtleplugTransport {
     }
 }
 
-fn find_char(peripheral: &Peripheral, short: u16) -> Result<Characteristic, BleError> {
-    let uuid = uuid_from_u16(short);
-    peripheral
-        .characteristics()
-        .into_iter()
-        .find(|char| char.uuid == uuid)
-        .ok_or_else(|| BleError::CharacteristicNotFound(format!("{short:04X}")))
-}
-
-fn find_battery_char(peripheral: &Peripheral) -> Result<Characteristic, BleError> {
-    let service_uuid = uuid_from_u16(SERVICE_BATTERY);
-    let char_uuid = uuid_from_u16(CHAR_BATTERY);
+fn find_char_in_service(
+    peripheral: &Peripheral,
+    service: u16,
+    short: u16,
+) -> Result<Characteristic, BleError> {
+    let service_uuid = uuid_from_u16(service);
+    let char_uuid = uuid_from_u16(short);
     peripheral
         .services()
         .iter()
         .find(|service| service.uuid == service_uuid)
         .and_then(|service| service.characteristics.iter().find(|c| c.uuid == char_uuid))
         .cloned()
-        .ok_or_else(|| {
-            BleError::CharacteristicNotFound(format!("{CHAR_BATTERY:04X} on {SERVICE_BATTERY:04X}"))
-        })
+        .ok_or_else(|| BleError::CharacteristicNotFound(format!("{short:04X} on {service:04X}")))
 }
 
 #[async_trait]
@@ -121,9 +114,9 @@ impl BleTransport for BtleplugTransport {
             return Err(BleError::ServiceNotFound(format!("{SERVICE_WATCH:04X}")));
         }
 
-        let write_char = find_char(&peripheral, CHAR_WRITE)?;
-        let notify_char = find_char(&peripheral, CHAR_NOTIFY)?;
-        let battery_char = find_battery_char(&peripheral)?;
+        let write_char = find_char_in_service(&peripheral, SERVICE_WATCH, CHAR_WRITE)?;
+        let notify_char = find_char_in_service(&peripheral, SERVICE_WATCH, CHAR_NOTIFY)?;
+        let battery_char = find_char_in_service(&peripheral, SERVICE_BATTERY, CHAR_BATTERY)?;
         peripheral.subscribe(&notify_char).await?;
 
         self.peripheral = Some(peripheral);
@@ -136,7 +129,7 @@ impl BleTransport for BtleplugTransport {
         let peripheral = self.peripheral.as_ref().ok_or(BleError::NotConnected)?;
         let char = self.write_char.as_ref().ok_or(BleError::NotConnected)?;
         peripheral
-            .write(char, frame, WriteType::WithResponse)
+            .write(char, frame, WriteType::WithoutResponse)
             .await?;
         Ok(())
     }
