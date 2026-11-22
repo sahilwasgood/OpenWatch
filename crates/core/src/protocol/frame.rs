@@ -44,7 +44,13 @@ pub fn parse(data: &[u8]) -> Result<Frame, ProtocolError> {
     if data.len() < HEADER_LEN {
         return Err(ProtocolError::TooShort);
     }
-    if data[3] as usize != data.len() {
+    // The encoder writes 0x20 + (total >> 8) in b2; reverse that to recover
+    // the high bits so payloads longer than 250 bytes round-trip.
+    let high = (data[2] as usize)
+        .checked_sub(LENGTH_BASE)
+        .ok_or(ProtocolError::BadLength)?;
+    let expected_len = (high << 8) | data[3] as usize;
+    if expected_len != data.len() {
         return Err(ProtocolError::BadLength);
     }
     Ok(Frame {
@@ -74,6 +80,20 @@ mod tests {
     fn packet_large_payload_header() {
         let bytes = packet(0x00, &[0xAB; 300]);
         assert_eq!(&bytes[..4], &[0xFE, 0xEA, 0x21, 0x31]);
+    }
+
+    #[test]
+    fn parse_large_payload_round_trip() {
+        let payload: Vec<u8> = (0..300).map(|i| i as u8).collect();
+        let bytes = packet(0xC3, &payload);
+        assert_eq!(&bytes[..4], &[0xFE, 0xEA, 0x21, 0x31]);
+        assert_eq!(
+            parse(&bytes).unwrap(),
+            Frame {
+                cmd: 0xC3,
+                payload,
+            }
+        );
     }
 
     #[test]
