@@ -84,6 +84,27 @@ pub fn start_hr() -> Vec<u8> {
     packet(0x6D, &[0x00])
 }
 
+/// Legacy camera trigger. `feea20066601` is the documented frame, but the live
+/// `{01}` probe was ignored — this stays unverified and never auto-runs.
+pub fn camera() -> Vec<u8> {
+    packet(0x66, &[0x01])
+}
+
+/// Query move reminders (`feea200583`), live-captured 2026-11-23.
+pub fn query_move_reminders() -> Vec<u8> {
+    packet(0x83, &[])
+}
+
+/// Query the women's-health record (`feea200585`), live-captured 2026-11-23.
+pub fn query_womens_health() -> Vec<u8> {
+    packet(0x85, &[])
+}
+
+/// Query the message-app list `B9{14,00}` (`feea2007b91400`), live-captured 2026-11-23.
+pub fn query_message_apps() -> Vec<u8> {
+    packet(0xB9, &[0x14, 0x00])
+}
+
 /// Today's weather: condition, temperature, then festival and city names.
 pub fn weather_today(cond: u8, temp: i8, city: &str, festival: &str) -> Vec<u8> {
     let mut payload = vec![0x00, cond, temp as u8];
@@ -141,6 +162,16 @@ mod tests {
             "feea20184300051c002000200020002000440045004c0048"
         );
         assert_eq!(hex(&time_sync(0x6B02_89F8)), "feea200a31f889026b08");
+    }
+
+    #[test]
+    fn legacy_capture_backed_builders() {
+        // 0x66 is the documented framing example; the other three are the exact
+        // TX frames from endpoint-probe-2026-11-23.json.
+        assert_eq!(hex(&camera()), "feea20066601");
+        assert_eq!(hex(&query_move_reminders()), "feea200583");
+        assert_eq!(hex(&query_womens_health()), "feea200585");
+        assert_eq!(hex(&query_message_apps()), "feea2007b91400");
     }
 
     #[test]

@@ -13,9 +13,11 @@ use slint::ComponentHandle;
 
 pub mod ai;
 pub mod bridge;
+pub mod data_surface;
 pub mod data_view;
 
 pub use bridge::{Action, AppError, AppState, DeviceLink, Reading, UiOptions};
+use data_surface::DataView;
 use data_view::WorkbenchData;
 
 /// Build, populate and run the shell with supplied state and options.
@@ -30,6 +32,14 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
         let mut wb = workbench.borrow_mut();
         wb.set_frames(state.borrow().stored_frames(200).unwrap_or_default());
         wb.apply_to(&window);
+    }
+
+    let data = Rc::new(RefCell::new(DataView::default()));
+    {
+        let mut view = data.borrow_mut();
+        view.load_units(&state.borrow());
+        let _ = view.reload(&state.borrow());
+        view.apply_to(&window);
     }
 
     let shared = state.clone();
@@ -132,6 +142,78 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
             let mut wb = shared.borrow_mut();
             wb.cancel_action();
             wb.apply_to(&view);
+        });
+    }
+
+    {
+        let shared = data.clone();
+        let view = window.clone_strong();
+        window.on_select_data_series(move |index| {
+            let mut data = shared.borrow_mut();
+            data.select(index);
+            data.apply_to(&view);
+        });
+    }
+    {
+        let shared = data.clone();
+        let app = state.clone();
+        let view = window.clone_strong();
+        window.on_export_json(move || {
+            let mut data = shared.borrow_mut();
+            data.export_json(&app.borrow());
+            data.apply_to(&view);
+        });
+    }
+    {
+        let shared = data.clone();
+        let app = state.clone();
+        let view = window.clone_strong();
+        window.on_export_csv(move || {
+            let mut data = shared.borrow_mut();
+            data.export_csv(&app.borrow());
+            data.apply_to(&view);
+        });
+    }
+    {
+        let shared = data.clone();
+        let view = window.clone_strong();
+        window.on_request_delete(move || {
+            let mut data = shared.borrow_mut();
+            data.request_delete();
+            data.apply_to(&view);
+        });
+    }
+    {
+        let shared = data.clone();
+        let view = window.clone_strong();
+        window.on_cancel_delete(move || {
+            let mut data = shared.borrow_mut();
+            data.cancel_delete();
+            data.apply_to(&view);
+        });
+    }
+    {
+        let shared = data.clone();
+        let app = state.clone();
+        let view = window.clone_strong();
+        window.on_confirm_delete(move || {
+            let result = shared.borrow_mut().delete_all(&mut app.borrow_mut());
+            if let Err(error) = result {
+                shared.borrow_mut().set_status(error.to_string());
+            }
+            shared.borrow_mut().apply_to(&view);
+        });
+    }
+    {
+        let shared = data.clone();
+        let app = state.clone();
+        let view = window.clone_strong();
+        window.on_toggle_units(move || {
+            let result = shared.borrow_mut().toggle_units(&mut app.borrow_mut());
+            if let Err(error) = result {
+                shared.borrow_mut().set_status(error.to_string());
+            }
+            shared.borrow_mut().apply_to(&view);
         });
     }
 
@@ -262,11 +344,39 @@ mod tests {
         for surface in [
             include_str!("../ui/today.slint"),
             include_str!("../ui/device.slint"),
+            include_str!("../ui/data.slint"),
         ] {
             assert!(
                 !surface.contains("frame-hex"),
                 "hex leaked into a human surface"
             );
+            assert!(
+                !surface.contains("Advanced actions"),
+                "unverified actions leaked into a human surface"
+            );
         }
+    }
+
+    #[test]
+    fn data_surface_covers_history_export_delete_and_units() {
+        let data = include_str!("../ui/data.slint");
+        for token in [
+            "History",
+            "Export JSON",
+            "Export CSV",
+            "Delete all local data",
+            "Delete every reading and frame",
+            "Units:",
+            "Confirm",
+            "Cancel",
+        ] {
+            assert!(data.contains(token), "data surface lost {token}");
+        }
+        let shell = include_str!("../ui/app-window.slint");
+        assert!(shell.contains("DataPane"), "shell lost the Data pane");
+        assert!(
+            shell.contains("data-series"),
+            "shell lost Data history wiring"
+        );
     }
 }

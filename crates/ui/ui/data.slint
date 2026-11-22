@@ -1,0 +1,263 @@
+// Data: history charts, JSON/CSV export, local delete with confirmation and a
+// display-units setting. Everything here reads the local store; no raw frame is
+// rendered and no unverified action is offered on this surface.
+import { Theme } from "theme.slint";
+
+export component DataSurface inherits Rectangle {
+    // History: the selected series' values are normalized to 0..1 for the bars;
+    // the human values are kept alongside so the chart never shows bare hex.
+    in property <[string]> series-keys: [];
+    in property <[float]> points: [];
+    in property <[string]> point-values: [];
+    in property <int> selected-series: 0;
+    in property <string> series-summary: "No history yet";
+
+    in property <string> preview: "";
+    in property <string> status: "Local store · nothing leaves this device";
+    in property <bool> pending-delete: false;
+    in property <string> units: "metric";
+
+    callback select-series(int);
+    callback export-json();
+    callback export-csv();
+    callback request-delete();
+    callback confirm-delete();
+    callback cancel-delete();
+    callback toggle-units();
+
+    Text {
+        x: Theme.space-6; y: 8px;
+        text: "Data · local store";
+        color: Theme.text-primary;
+        font-size: Theme.font-section;
+        font-weight: 600;
+    }
+
+    // History chart -------------------------------------------------------
+    Rectangle {
+        y: 36px; width: 392px; height: 300px;
+        background: Theme.content-surface;
+        border-radius: Theme.radius-sm;
+        Text {
+            x: Theme.space-3; y: 8px;
+            text: "History · \{root.series-summary}";
+            color: Theme.text-primary;
+            font-size: Theme.font-caption;
+            overflow: elide;
+        }
+        Flickable {
+            x: 4px; y: 32px; width: parent.width - 8px; height: 28px;
+            content-width: Math.max(self.width, root.series-keys.length * 116px);
+            for key[i] in root.series-keys: Rectangle {
+                x: i * 116px; width: 110px; height: 24px;
+                background: root.selected-series == i ? Theme.accent : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                Text {
+                    width: 100%; height: 100%;
+                    text: key;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-micro;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                chip-touch := TouchArea { clicked => { root.select-series(i); } }
+            }
+        }
+        Rectangle {
+            x: Theme.space-3; y: 64px; width: parent.width - Theme.space-6; height: 168px;
+            background: Theme.zinc-950;
+            border-radius: Theme.radius-sm;
+            // One bar per reading. Values are normalized upstream; the raw
+            // human value is printed above the bar so the chart is readable.
+            for value[i] in root.points: Rectangle {
+                x: 8px + i * (parent.width - 16px) / Math.max(root.points.length, 1);
+                y: parent.height - 20px - (parent.height - 32px) * value;
+                width: (parent.width - 16px) / Math.max(root.points.length, 1) - 2px;
+                height: Math.max(2px, (parent.height - 32px) * value);
+                background: Theme.accent;
+                border-radius: 2px;
+            }
+            for value[i] in root.point-values: Text {
+                x: 8px + i * (parent.width - 16px) / Math.max(root.point-values.length, 1);
+                y: parent.height - 16px;
+                width: (parent.width - 16px) / Math.max(root.point-values.length, 1) - 2px;
+                text: value;
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+                font-family: Theme.numeral-font;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+            if root.points.length == 0 : Text {
+                x: Theme.space-3; y: (parent.height - self.height) / 2;
+                text: "No numeric readings recorded yet";
+                color: Theme.text-secondary;
+                font-size: Theme.font-caption;
+            }
+        }
+        Text {
+            x: Theme.space-3; y: 240px; width: parent.width - Theme.space-6;
+            text: root.series-summary;
+            color: Theme.text-secondary;
+            font-size: Theme.font-micro;
+            wrap: word-wrap;
+        }
+        Text {
+            x: Theme.space-3; y: 268px;
+            text: "Readings are stored locally with UTC timestamps";
+            color: Theme.text-secondary;
+            font-size: Theme.font-micro;
+        }
+    }
+
+    // Export -------------------------------------------------------------
+    Rectangle {
+        x: 400px; y: 36px; width: 392px; height: 300px;
+        background: Theme.content-surface;
+        border-radius: Theme.radius-sm;
+        Text {
+            x: Theme.space-3; y: 8px;
+            text: "Export · JSON / CSV";
+            color: Theme.text-primary;
+            font-size: Theme.font-caption;
+        }
+        Rectangle {
+            x: Theme.space-3; y: 32px; width: 108px; height: 26px;
+            background: json-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            Text {
+                width: 100%; height: 100%; text: "Export JSON";
+                color: Theme.text-primary; font-size: Theme.font-micro;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+            json-touch := TouchArea { clicked => { root.export-json(); } }
+        }
+        Rectangle {
+            x: 124px; y: 32px; width: 104px; height: 26px;
+            background: csv-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            Text {
+                width: 100%; height: 100%; text: "Export CSV";
+                color: Theme.text-primary; font-size: Theme.font-micro;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+            csv-touch := TouchArea { clicked => { root.export-csv(); } }
+        }
+        Rectangle {
+            x: Theme.space-3; y: 66px; width: parent.width - Theme.space-6; height: 174px;
+            background: Theme.zinc-950;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: Theme.space-3; y: 6px; width: parent.width - Theme.space-6;
+                text: root.preview != "" ? root.preview : "Choose JSON or CSV to build an export here.";
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+                font-family: Theme.numeral-font;
+                wrap: word-wrap;
+            }
+        }
+        Text {
+            x: Theme.space-3; y: 250px; width: parent.width - Theme.space-6;
+            text: root.status;
+            color: Theme.text-secondary;
+            font-size: Theme.font-micro;
+            wrap: word-wrap;
+        }
+    }
+
+    // Local store / settings ---------------------------------------------
+    Rectangle {
+        y: 348px; width: 100%; height: 200px;
+        background: Theme.content-surface;
+        border-radius: Theme.radius-sm;
+        Text {
+            x: Theme.space-3; y: 8px;
+            text: "Local store · settings";
+            color: Theme.text-primary;
+            font-size: Theme.font-caption;
+        }
+        Rectangle {
+            x: Theme.space-3; y: 40px; width: 180px; height: 28px;
+            background: units-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            Text {
+                width: 100%; height: 100%;
+                text: "Units: \{root.units == "imperial" ? "Imperial" : "Metric"}";
+                color: Theme.text-primary; font-size: Theme.font-micro;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+            units-touch := TouchArea { clicked => { root.toggle-units(); } }
+        }
+        Text {
+            x: 196px; y: 46px;
+            text: "Display preference, kept locally";
+            color: Theme.text-secondary;
+            font-size: Theme.font-micro;
+        }
+
+        Rectangle {
+            x: Theme.space-3; y: 92px; width: 200px; height: 28px;
+            visible: !root.pending-delete;
+            background: delete-touch.pressed ? Theme.status-bad : Theme.glass-card-dark;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            Text {
+                width: 100%; height: 100%; text: "Delete all local data";
+                color: Theme.text-primary; font-size: Theme.font-micro;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+            delete-touch := TouchArea { clicked => { root.request-delete(); } }
+        }
+
+        if root.pending-delete : Rectangle {
+            x: Theme.space-3; y: 88px; width: parent.width - Theme.space-6; height: 96px;
+            background: Theme.zinc-900;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.status-bad;
+            Text {
+                x: Theme.space-3; y: 8px; width: parent.width - Theme.space-6;
+                text: "Delete every reading and frame stored locally? This cannot be undone.";
+                color: Theme.text-primary;
+                font-size: Theme.font-caption;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                x: Theme.space-3; y: 50px; width: 92px; height: 28px;
+                background: confirm-touch.pressed ? Theme.status-bad : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                Text {
+                    width: 100%; height: 100%; text: "Confirm";
+                    color: Theme.text-primary; font-size: Theme.font-micro;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                confirm-touch := TouchArea { clicked => { root.confirm-delete(); } }
+            }
+            Rectangle {
+                x: 124px; y: 50px; width: 92px; height: 28px;
+                background: cancel-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                Text {
+                    width: 100%; height: 100%; text: "Cancel";
+                    color: Theme.text-primary; font-size: Theme.font-micro;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                cancel-touch := TouchArea { clicked => { root.cancel-delete(); } }
+            }
+        }
+    }
+}

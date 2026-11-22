@@ -38,6 +38,15 @@ struct Export {
     frames: Vec<FrameRow>,
 }
 
+/// Quote a CSV field only when it contains a delimiter, quote or newline.
+fn csv_field(value: &str) -> String {
+    if value.contains(|c: char| matches!(c, ',' | '"' | '\n' | '\r')) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
 /// A local SQLite store. Use `":memory:"` as the path for a transient store.
 pub struct Store {
     conn: Connection,
@@ -142,6 +151,65 @@ impl Store {
         Ok(serde_json::to_string_pretty(&Export { readings, frames })?)
     }
 
+    /// Distinct reading keys, sorted, for the Data history chart selector.
+    pub fn reading_keys(&self) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT key FROM readings ORDER BY key ASC")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Serialize both tables to CSV: a labelled readings block and a frames block.
+    pub fn export_csv(&self) -> Result<String, StoreError> {
+        let mut out = String::from("readings\nkey,value,at_unix\n");
+        let mut readings_stmt = self
+            .conn
+            .prepare("SELECT key, value, at_unix FROM readings ORDER BY at_unix ASC")?;
+        let readings = readings_stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in readings {
+            let (key, value, at) = row?;
+            out.push_str(&format!(
+                "{},{},{}\n",
+                csv_field(&key),
+                csv_field(&value),
+                at
+            ));
+        }
+
+        out.push_str("\nframes\nid,direction,frame_hex,at_unix,confidence\n");
+        let mut frames_stmt = self.conn.prepare(
+            "SELECT id, direction, frame_hex, at_unix, confidence FROM frames ORDER BY id ASC",
+        )?;
+        let frames = frames_stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        for row in frames {
+            let (id, direction, hex, at, confidence) = row?;
+            out.push_str(&format!(
+                "{},{},{},{},{}\n",
+                id,
+                csv_field(&direction),
+                csv_field(&hex),
+                at,
+                csv_field(&confidence)
+            ));
+        }
+        Ok(out)
+    }
+
     /// Delete every reading and frame (keeps the database file and schema).
     pub fn delete_all(&mut self) -> Result<(), StoreError> {
         self.conn
@@ -203,6 +271,32 @@ mod tests {
         assert!(json.contains("language"), "{json}");
         assert!(json.contains("FEEA200553"), "{json}");
         let _: serde_json::Value = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn reading_keys_are_distinct_and_sorted() {
+        let mut store = Store::open(":memory:").unwrap();
+        store.put_reading("steps", "1", 1).unwrap();
+        store.put_reading("steps", "2", 2).unwrap();
+        store.put_reading("battery", "50", 1).unwrap();
+        assert_eq!(store.reading_keys().unwrap(), ["battery", "steps"]);
+    }
+
+    #[test]
+    fn export_csv_covers_both_tables_and_escapes_commas() {
+        let mut store = Store::open(":memory:").unwrap();
+        store.put_reading("language", "a,b", 200).unwrap();
+        store
+            .put_frame("rx", "FEEA200553", 100, Confidence::Live)
+            .unwrap();
+        let csv = store.export_csv().unwrap();
+        assert!(csv.contains("key,value,at_unix"), "{csv}");
+        assert!(csv.contains("\"a,b\""), "comma must be quoted: {csv}");
+        assert!(
+            csv.contains("id,direction,frame_hex,at_unix,confidence"),
+            "{csv}"
+        );
+        assert!(csv.contains("FEEA200553"), "{csv}");
     }
 
     #[test]

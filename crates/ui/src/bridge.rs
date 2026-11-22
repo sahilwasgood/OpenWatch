@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use openwatch_core::ble::BleError;
 use openwatch_core::connection::ConnectionState;
 use openwatch_core::protocol::command;
-use openwatch_core::protocol::decode::{decode, Value};
+use openwatch_core::protocol::decode::{decode, decode_message_apps, Value};
 use openwatch_core::protocol::frame::Frame;
 use openwatch_core::store::{FrameRow, Store};
 use slint::{ModelRc, SharedString, VecModel};
@@ -266,6 +266,62 @@ impl AppState {
         }
     }
 
+    /// Distinct reading keys in the local store, for the history selector.
+    pub fn reading_keys(&self) -> Result<Vec<String>, AppError> {
+        match &self.store {
+            Some(store) => Ok(store.reading_keys()?),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Timestamped values for one reading key.
+    pub fn readings(&self, key: &str) -> Result<Vec<(i64, String)>, AppError> {
+        match &self.store {
+            Some(store) => Ok(store.readings(key)?),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Serialize everything the store holds to JSON (empty string with no store).
+    pub fn export_json(&self) -> Result<String, AppError> {
+        match &self.store {
+            Some(store) => Ok(store.export_json()?),
+            None => Ok(String::new()),
+        }
+    }
+
+    /// Serialize everything the store holds to CSV (empty string with no store).
+    pub fn export_csv(&self) -> Result<String, AppError> {
+        match &self.store {
+            Some(store) => Ok(store.export_csv()?),
+            None => Ok(String::new()),
+        }
+    }
+
+    /// Erase all locally stored readings and frames.
+    pub fn delete_all(&mut self) -> Result<(), AppError> {
+        if let Some(store) = self.store.as_mut() {
+            store.delete_all()?;
+        }
+        Ok(())
+    }
+
+    /// Persist the local display-units preference as a reading.
+    pub fn set_units(&mut self, units: &str) -> Result<(), AppError> {
+        if let Some(store) = self.store.as_mut() {
+            store.put_reading("units", units, (self.now)())?;
+        }
+        Ok(())
+    }
+
+    /// Last saved display-units preference, if any.
+    pub fn units(&self) -> Option<String> {
+        self.store
+            .as_ref()
+            .and_then(|store| store.readings("units").ok())
+            .and_then(|rows| rows.last().map(|(_, value)| value.clone()))
+    }
+
     pub fn reading(&self, key: &str) -> Option<&Reading> {
         self.cards
             .iter()
@@ -443,22 +499,22 @@ impl AppState {
                 &stamp,
             ));
         }
-        if let Some(Value::Bytes(apps)) = read(link, 0xB9, &[0x20]) {
-            // shortcut: the B9{20,00} app list has no published layout; a count
-            // plus NUL-separated names is the conservative reading. Replace
-            // when the layout is live-verified.
-            let names: Vec<String> = apps
-                .get(3..)
-                .unwrap_or_default()
-                .split(|byte| *byte == 0)
-                .filter(|name| !name.is_empty())
-                .map(|name| String::from_utf8_lossy(name).into_owned())
-                .collect();
-            let value = if names.is_empty() {
-                format!("{} enabled", apps.get(2).copied().unwrap_or(0))
-            } else {
-                names.join(", ")
-            };
+        if let Some(Value::Text(value)) = read(link, 0x83, &[]) {
+            cards.push(reading(
+                "move-reminders",
+                "Today",
+                "Move reminders",
+                value,
+                "Reminder schedule stored on the watch",
+                &stamp,
+            ));
+        }
+        if let Some(Value::Bytes(apps)) = read(link, 0xB9, &[0x14]) {
+            // B9{14,00} (decimal 20) is live-verified from the 2026-11-23 probe:
+            // the trailing bytes are app IDs, not NUL-separated names.
+            let value = decode_message_apps(&apps)
+                .map(|list| list.label())
+                .unwrap_or_default();
             device_values.push(reading(
                 "message-apps",
                 "Messages",
@@ -675,26 +731,32 @@ mod tests {
             0x20, 0x00, 0x00, 0x04, 0x1E, 0x00, 0x00, 0x00,
         ];
         vec![
-            (0x2B, vec![0, 0, 0, 0x1D, 0xF3]),          // steps today: 7667
-            (0x2E, vec![1]),                            // language: international
-            (0xBA, vec![1, 0, 40]),                     // firmware: 1.0.40
-            (0x29, b"international".to_vec()),          // edition
-            (0xBB, vec![0x0B, 0xF0, 0x00]),             // message limit: 240
-            (0x84, vec![1]),                            // device state
-            (0x35, vec![0; 73]),                        // HR history
-            (0x59, vec![0; 49]),                        // step categories
-            (0x2F, vec![0]),                            // auto-HR index
-            (0x81, vec![72]),                           // live HR a
-            (0x82, vec![72]),                           // live HR b
-            (0x27, vec![1]),                            // time system: 24h
-            (0x2C, vec![0, 0, 0xA4, 0x01]),             // quiet hours 00:00-07:00
-            (0x39, face_layout()),                      // watch-face layout
-            (0xB9, goals),                              // goals
-            (0xB9, vec![0x11, 1, 2, 3, 4]),             // stress
-            (0xB9, vec![0x15, 0x04, 0x00]),             // alarms: none set
-            (0xB9, vec![0x20, 0x00, 0x02, b'A', b'B']), // message apps
-            (0x26, vec![0x10, 0x27, 0, 0]),             // step goal readback
-            (0x64, vec![0]),                            // weather probe
+            (0x2B, vec![0, 0, 0, 0x1D, 0xF3]), // steps today: 7667
+            (0x2E, vec![1]),                   // language: international
+            (0xBA, vec![1, 0, 40]),            // firmware: 1.0.40
+            (0x29, b"international".to_vec()), // edition
+            (0xBB, vec![0x0B, 0xF0, 0x00]),    // message limit: 240
+            (0x84, vec![1]),                   // device state
+            (0x35, vec![0; 73]),               // HR history
+            (0x59, vec![0; 49]),               // step categories
+            (0x2F, vec![0]),                   // auto-HR index
+            (0x81, vec![72]),                  // live HR a
+            (0x82, vec![72]),                  // live HR b
+            (0x27, vec![1]),                   // time system: 24h
+            (0x2C, vec![0, 0, 0xA4, 0x01]),    // quiet hours 00:00-07:00
+            (0x39, face_layout()),             // watch-face layout
+            (0xB9, goals),                     // goals
+            (0xB9, vec![0x11, 1, 2, 3, 4]),    // stress
+            (0xB9, vec![0x15, 0x04, 0x00]),    // alarms: none set
+            // B9{14,00} message-app list, live capture 2026-11-23 (19 entries).
+            (
+                0xB9,
+                hex_bytes("140013000102030405060708090a0b0c0d0e0f111f80"),
+            ),
+            // 0x83 move reminders, live capture 2026-11-23.
+            (0x83, hex_bytes("3c320a16")),
+            (0x26, vec![0x10, 0x27, 0, 0]), // step goal readback
+            (0x64, vec![0]),                // weather probe
         ]
     }
 
@@ -745,6 +807,11 @@ mod tests {
         assert_eq!(state.reading("firmware").unwrap().value, "1.0.40");
         assert_eq!(state.reading("goals-steps").unwrap().value, "10000");
         assert_eq!(state.reading("message-limit").unwrap().value, "240");
+        assert_eq!(state.reading("message-apps").unwrap().value, "19 enabled");
+        assert_eq!(
+            state.reading("move-reminders").unwrap().value,
+            "50 steps every 60 min · 10:00–22:00"
+        );
         assert!(!state.cards.is_empty());
         assert!(!state.device_values.is_empty());
         for card in state.cards.iter().chain(state.device_values.iter()) {

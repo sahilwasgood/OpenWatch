@@ -13,6 +13,70 @@ pub enum Value {
     Time(String),
 }
 
+/// Move reminders decoded from the live `0x83` reply `3c 32 0a 16`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoveReminders {
+    pub interval_minutes: u8,
+    pub steps: u8,
+    pub start_hour: u8,
+    pub end_hour: u8,
+}
+
+impl MoveReminders {
+    pub fn label(&self) -> String {
+        format!(
+            "{} steps every {} min · {:02}:00–{:02}:00",
+            self.steps, self.interval_minutes, self.start_hour, self.end_hour
+        )
+    }
+}
+
+/// `0x83` reply: `[interval min][steps][start hour][end hour]`.
+pub fn decode_move_reminders(payload: &[u8]) -> Option<MoveReminders> {
+    if payload.len() < 4 {
+        return None;
+    }
+    Some(MoveReminders {
+        interval_minutes: payload[0],
+        steps: payload[1],
+        start_hour: payload[2],
+        end_hour: payload[3],
+    })
+}
+
+/// Message-app list decoded from the live `B9{14,00}` capture.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageAppList {
+    pub sub: u8,
+    pub index: u8,
+    pub count: u8,
+    pub entries: Vec<u8>,
+}
+
+impl MessageAppList {
+    pub fn label(&self) -> String {
+        format!("{} enabled", self.count)
+    }
+}
+
+/// `B9{14,00}` reply: `[0x14][index][count][count app-id entries]`.
+/// Sub `0x14` is decimal 20 — the design's `B9{20,0}` list, now live-verified.
+pub fn decode_message_apps(payload: &[u8]) -> Option<MessageAppList> {
+    if payload.len() < 3 || payload[0] != 0x14 {
+        return None;
+    }
+    let count = payload[2] as usize;
+    if payload.len() < 3 + count {
+        return None;
+    }
+    Some(MessageAppList {
+        sub: payload[0],
+        index: payload[1],
+        count: payload[2],
+        entries: payload[3..3 + count].to_vec(),
+    })
+}
+
 /// Decode a known reply payload. Unknown opcodes return `None`.
 pub fn decode(cmd: u8, payload: &[u8]) -> Option<Value> {
     let be_u32 = |at: usize| {
@@ -72,8 +136,14 @@ pub fn decode(cmd: u8, payload: &[u8]) -> Option<Value> {
             }
             // stress: state/timestamp/hourly
             0x11 => (payload.len() >= 2).then(|| Value::Bytes(payload.to_vec())),
+            // message-app list: validated against the live B9{14,00} capture.
+            0x14 => {
+                (decode_message_apps(payload).is_some()).then(|| Value::Bytes(payload.to_vec()))
+            }
             _ => None,
         },
+        // Move reminders are live-verified; expose the decoded, human label.
+        0x83 => decode_move_reminders(payload).map(|reminders| Value::Text(reminders.label())),
         // Multi-field replies without a dedicated Value variant: preserve raw bytes.
         0x29 | 0x84 | 0x35 | 0x59 | 0x2F | 0x81 | 0x82 | 0x2C => {
             Some(Value::Bytes(payload.to_vec()))
@@ -95,6 +165,13 @@ pub fn select_reply(frames: &[Frame], cmd: u8) -> Option<Frame> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hex_bytes(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect()
+    }
 
     #[test]
     fn language_mask() {
@@ -185,6 +262,37 @@ mod tests {
     fn b9_stress_payload() {
         let payload = [0x11, 0x01, 0x02, 0x03, 0x04];
         assert_eq!(decode(0xB9, &payload), Some(Value::Bytes(payload.to_vec())));
+    }
+
+    #[test]
+    fn move_reminders_from_live_capture() {
+        // feea2009833c320a16 -> payload 3c 32 0a 16
+        let payload = hex_bytes("3c320a16");
+        let reminders = decode_move_reminders(&payload).unwrap();
+        assert_eq!(reminders.interval_minutes, 60);
+        assert_eq!(reminders.steps, 50);
+        assert_eq!(reminders.start_hour, 10);
+        assert_eq!(reminders.end_hour, 22);
+        assert_eq!(reminders.label(), "50 steps every 60 min · 10:00–22:00");
+        assert_eq!(decode(0x83, &payload), Some(Value::Text(reminders.label())));
+        assert_eq!(decode_move_reminders(&[0x3c, 0x32, 0x0a]), None);
+    }
+
+    #[test]
+    fn message_app_list_from_live_capture() {
+        // feea201bb914001300..1f80 -> payload after the 0xB9 command byte.
+        let payload = hex_bytes("140013000102030405060708090a0b0c0d0e0f111f80");
+        let list = decode_message_apps(&payload).unwrap();
+        assert_eq!(list.sub, 0x14, "B9{{14,00}} is decimal 20");
+        assert_eq!(list.index, 0);
+        assert_eq!(list.count, 19);
+        assert_eq!(list.entries.len(), 19);
+        assert_eq!(list.entries[0], 0x00);
+        assert_eq!(list.entries[18], 0x80);
+        assert_eq!(list.label(), "19 enabled");
+        assert_eq!(decode(0xB9, &payload), Some(Value::Bytes(payload.clone())));
+        assert_eq!(decode_message_apps(&payload[..5]), None, "truncated list");
+        assert_eq!(decode_message_apps(&[0x20, 0, 1, 0]), None, "wrong sub");
     }
 
     #[test]
