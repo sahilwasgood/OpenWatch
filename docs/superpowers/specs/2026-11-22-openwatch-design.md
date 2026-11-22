@@ -100,7 +100,7 @@ other-message state, watch-face layout, auto-HR index, battery.
 - Time sync `0x31` — L, fire-and-forget.
 - Message push `0x41 {0x80, UTF-8 ≤240 B}` — L, transient, never retried.
 - Step goal `0x16` BE32 (query `0x26` LE32) — L; watch recomputes a derived goal on write.
-- Time system `0x17`, DND `0x71`, auto-HR `0x1F`, quiet hours — L (readback-confirmed).
+- Time system `0x17`, DND `0x71`, auto-HR `0x1F` — L (readback-confirmed). Quiet hours `0x2C` is L for the read only (listed above under Dashboard reads); no separate quiet-hours write has been captured — `0x71` (DND) is the verified write path.
 - Alarm set/delete `B9{05,00|02,…}` — L (dump-confirmed).
 - Weather `0x43` today / `0x42` 7-day / `0xB5` sun; `0x64` is watch→phone only — S.
   Values are entered manually in v1; no weather provider is bundled.
