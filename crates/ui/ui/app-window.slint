@@ -28,12 +28,21 @@ component DestinationPane inherits Rectangle {
         font-size: Theme.font-title;
         font-weight: 600;
     }
-    Text {
+    // Long text sits on a near-opaque surface above the glass card.
+    Rectangle {
         x: Theme.space-6;
         y: Theme.space-6 + Theme.font-title + Theme.space-3;
-        text: root.detail;
-        color: Theme.text-secondary;
-        font-size: Theme.font-body;
+        width: parent.width - Theme.space-6 * 2;
+        height: 72px;
+        background: Theme.content-surface;
+        border-radius: Theme.radius-sm;
+        Text {
+            x: Theme.space-3;
+            y: Theme.space-2;
+            text: root.detail;
+            color: Theme.text-primary;
+            font-size: Theme.font-body;
+        }
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
@@ -55,6 +64,14 @@ export component AppWindow inherits Window {
 
     // The four navigation destinations, exposed for the generated-type test.
     out property <[string]> navigation-destinations: Navigation.destinations;
+
+    // Status color is derived from the bridge label; the text label remains
+    // visible so color is never the only signal.
+    out property <color> status-color:
+        root.connection-state == "connected" ? Theme.status-good :
+        (root.connection-state == "reconnecting" || root.connection-state == "scanning" || root.connection-state == "connecting") ? Theme.status-warn :
+        root.connection-state == "not found" ? Theme.status-bad :
+        Theme.text-secondary;
 
     width: 1040px;
     height: 720px;
@@ -113,7 +130,7 @@ export component AppWindow inherits Window {
         }
     }
 
-    // Connection strip: device, battery, state and last sync.
+    // Connection strip: device, battery, state, last sync and primary action.
     Rectangle {
         x: 232px;
         y: 16px;
@@ -134,27 +151,73 @@ export component AppWindow inherits Window {
             font-size: Theme.font-body;
             font-weight: 600;
         }
-        Text {
+        // Numbers sit on a near-opaque content surface above the glass.
+        Rectangle {
             x: root.width - 440px;
-            y: 16px;
-            text: root.battery >= 0 ? "\{root.battery}%" : "—";
-            color: Theme.text-secondary;
-            font-size: Theme.font-caption;
-            font-family: Theme.numeral-font;
+            y: 12px;
+            width: 88px;
+            height: 32px;
+            background: Theme.content-surface;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: Theme.space-3;
+                y: (parent.height - self.height) / 2;
+                text: root.battery >= 0 ? "\{root.battery}%" : "—";
+                color: Theme.text-primary;
+                font-size: Theme.font-caption;
+                font-family: Theme.numeral-font;
+            }
+        }
+        Rectangle {
+            x: root.width - 340px;
+            y: 24px;
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: root.status-color;
+            animate background {
+                duration: Theme.motion-standard;
+                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
         }
         Text {
-            x: root.width - 360px;
+            x: root.width - 324px;
             y: 16px;
             text: root.connection-state;
-            color: Theme.text-secondary;
+            color: root.high-contrast ? Theme.text-primary : root.status-color;
             font-size: Theme.font-caption;
         }
         Text {
-            x: root.width - 220px;
+            x: root.width - 240px;
             y: 16px;
             text: "Synced \{root.last-sync}";
             color: Theme.text-secondary;
             font-size: Theme.font-caption;
+        }
+        // Primary action: 120 ms press feedback.
+        Rectangle {
+            x: root.width - 150px;
+            y: 12px;
+            width: 110px;
+            height: 32px;
+            background: sync-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            animate background {
+                duration: Theme.motion-press;
+                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            Text {
+                width: 100%;
+                height: 100%;
+                text: "Sync now";
+                color: Theme.text-primary;
+                font-size: Theme.font-caption;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            sync-touch := TouchArea { }
         }
     }
 
