@@ -55,7 +55,7 @@ mod android {
         activity_raw: jni::sys::jobject,
     ) -> Result<(), Box<dyn std::error::Error>> {
         vm.attach_current_thread(|env| {
-            let class = env.find_class("com/openwatch/OpenWatchActivity")?;
+            let class = env.find_class(jni_str!("com/openwatch/OpenWatchActivity"))?;
             unsafe {
                 env.register_native_methods(
                     &class,
@@ -84,7 +84,7 @@ mod android {
         activity_raw: jni::sys::jobject,
     ) -> Result<(), Box<dyn std::error::Error>> {
         vm.attach_current_thread(|env| {
-            let class = env.find_class("com/openwatch/OpenWatchActivity")?;
+            let class = env.find_class(jni_str!("com/openwatch/OpenWatchActivity"))?;
             let activity = unsafe { JObject::from_raw(env, activity_raw) };
             env.call_static_method(
                 &class,
