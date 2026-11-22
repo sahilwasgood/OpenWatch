@@ -31,6 +31,8 @@ pub enum BleError {
     ServiceNotFound(String),
     #[error("GATT characteristic not found: {0}")]
     CharacteristicNotFound(String),
+    #[error("no matching reply received")]
+    Timeout,
 }
 
 /// Async BLE operations against a connected watch.
