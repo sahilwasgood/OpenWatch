@@ -103,4 +103,33 @@ mod tests {
             assert!(shell.contains(token), "shell does not apply {token}");
         }
     }
+
+    #[test]
+    fn device_grid_rows_fit_and_do_not_overlap() {
+        let device = include_str!("../ui/device.slint");
+        for expression in [
+            "Math.mod(i, 3) * (parent.width / 3) + Theme.space-3",
+            "Math.floor(i / 3) * 88px",
+            "width: parent.width / 3 - Theme.space-6",
+            "height: 84px",
+        ] {
+            assert!(device.contains(expression), "device grid lost {expression}");
+        }
+        let columns = 3i32;
+        let rows = 15i32;
+        let stride = 88i32;
+        let height = 84i32;
+        let bands = (rows + columns - 1) / columns;
+        let last_bottom = (bands - 1) * stride + height;
+        assert!(
+            last_bottom <= 560,
+            "last device row ends at {last_bottom}px, past the ~560px content area"
+        );
+        // Column c: x = c*step + space-3, width = step - space-6; the next
+        // column starts at (c+1)*step + space-3, so the gap must stay positive.
+        let step = 792 / columns; // AppWindow content width / 3
+        let first_right = 12 + (step - 24);
+        let next_left = step + 12;
+        assert!(first_right < next_left, "same-band columns overlap");
+    }
 }

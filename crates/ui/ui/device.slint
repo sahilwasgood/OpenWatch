@@ -16,10 +16,13 @@ export component DeviceSurface inherits Rectangle {
     in property <bool> high-contrast: false;
 
     for row[i] in root.rows: Rectangle {
-        x: Theme.space-6 + Math.mod(i, 3) * (parent.width / 3);
-        y: Theme.space-6 + Math.floor(i / 2) * 76px;
-        width: parent.width / 2 - Theme.space-3;
-        height: 68px;
+        // Three columns with matching x/width divisors and a 4 px vertical
+        // gap: 15 rows make five bands, 4*88px + 84px = 436px, inside the
+        // ~560px content area.
+        x: Math.mod(i, 3) * (parent.width / 3) + Theme.space-3;
+        y: Math.floor(i / 3) * 88px;
+        width: parent.width / 3 - Theme.space-6;
+        height: 84px;
 
         GlassCard {
             width: 100%;
@@ -31,9 +34,11 @@ export component DeviceSurface inherits Rectangle {
         Text {
             x: Theme.space-3;
             y: Theme.space-2;
+            width: parent.width - Theme.space-6;
             text: "\{row.group} · \{row.title}";
             color: Theme.text-secondary;
             font-size: Theme.font-micro;
+            overflow: elide;
         }
         Text {
             x: Theme.space-3;
@@ -48,19 +53,20 @@ export component DeviceSurface inherits Rectangle {
         Text {
             x: Theme.space-3;
             y: 48px;
+            width: parent.width - Theme.space-6;
             text: row.detail;
             color: Theme.text-secondary;
             font-size: Theme.font-micro;
+            overflow: elide;
         }
         Text {
-            x: parent.width - 200px;
-            y: Theme.space-2;
-            width: 192px;
+            x: Theme.space-3;
+            y: 68px;
+            width: parent.width - Theme.space-6;
             text: "Updated \{row.updated-at}";
             color: Theme.text-secondary;
             font-size: Theme.font-micro;
             font-family: Theme.numeral-font;
-            horizontal-alignment: right;
         }
     }
 }
