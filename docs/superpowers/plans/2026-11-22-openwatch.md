@@ -85,7 +85,7 @@ Expected: FAIL — functions not found.
 
 - [ ] **Step 3: Implement the codec**
 
-`packet` computes `total = 5 + payload.len()`, `b2 = (0x20 + (total >> 8)) & 0xFF`, returns magic + b2 + low byte + cmd + payload. `parse` checks magic, minimum length, then that `data[3] as usize == data.len()`.
+`packet` computes `total = 5 + payload.len()`, `b2 = (0x20 + (total >> 8)) & 0xFF`, returns magic + b2 + low byte + cmd + payload. `parse` checks magic, minimum length, then reconstructs the full expected length from both header bytes (`data[2]` high bits and `data[3]`) and checks it against `data.len()`.
 
 - [ ] **Step 4: Run tests, verify pass**
 
