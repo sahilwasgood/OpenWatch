@@ -35,7 +35,7 @@ jobs:
       - name: Build btleplug JNI AAR
         run: |
           set -euo pipefail
-          JAVA_DIR=$(find "$HOME/.cargo/registry/src" -maxdepth 2 -type d -path '*/btleplug-0.13.*/src/droidplug/java' | head -1)
+          JAVA_DIR=$(find "$HOME/.cargo/registry/src" -maxdepth 5 -type d -path '*/btleplug-0.13.*/src/droidplug/java' | head -1)
           test -n "$JAVA_DIR"
           (cd "$JAVA_DIR" && ./gradlew assembleRelease)
           mkdir -p crates/android/libs

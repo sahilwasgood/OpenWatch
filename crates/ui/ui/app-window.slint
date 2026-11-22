@@ -232,6 +232,7 @@ export component AppWindow inherits Window {
     in-out property <int> battery: -1;
     in-out property <string> connection-state: "idle";
     in-out property <string> last-sync: "never";
+    in-out property <bool> syncing: false;
     in-out property <int> active-tab: 0;
     in-out property <[CardView]> metric-cards: [];
     in-out property <[RowView]> device-values: [];
@@ -425,7 +426,8 @@ export component AppWindow inherits Window {
             y: 12px;
             width: 110px;
             height: 32px;
-            background: sync-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+            background: root.syncing ? Theme.content-surface :
+                (sync-touch.pressed ? Theme.accent : Theme.glass-card-dark);
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.card-edge;
@@ -436,13 +438,16 @@ export component AppWindow inherits Window {
             Text {
                 width: 100%;
                 height: 100%;
-                text: "Sync now";
-                color: Theme.text-primary;
+                text: root.syncing ? "Syncing…" : "Sync now";
+                color: root.syncing ? Theme.text-secondary : Theme.text-primary;
                 font-size: Theme.font-caption;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
-            sync-touch := TouchArea { clicked => { root.sync-now(); } }
+            sync-touch := TouchArea {
+                enabled: !root.syncing;
+                clicked => { root.sync-now(); }
+            }
         }
     }
 

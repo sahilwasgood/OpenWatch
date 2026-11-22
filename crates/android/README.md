@@ -10,7 +10,9 @@ btleplug's JNI bridge, then hands a live `ConnectionLink` to the shared UI in
 - `manifest/AndroidManifest.xml` — canonical manifest (BLE permissions, minSdk 26, NativeActivity with `android.app.lib_name = openwatch_android`).
 - `app/build.gradle` — AGP module; points at the manifest above and at `app/src/main/jniLibs`.
 - `app/proguard-rules.pro` — R8 keep rules for btleplug's JNI-only Java classes.
-- `src/lib.rs` — `android_main` and `launch`.
+- `app/src/main/java/com/openwatch/OpenWatchActivity.java` — requests BLE
+  runtime permissions and gates the native adapter creation.
+- `src/lib.rs` — `android_main`, the permission callback and `launch`.
 
 ## Prerequisites
 
@@ -23,7 +25,7 @@ btleplug's JNI bridge, then hands a live `ConnectionLink` to the shared UI in
 
 ```sh
 # 1. btleplug's Java/JNI support classes (ships inside the btleplug crate).
-JAVA_DIR=$(find ~/.cargo/registry/src -maxdepth 2 -type d \
+JAVA_DIR=$(find ~/.cargo/registry/src -maxdepth 5 -type d \
   -path '*/btleplug-0.13.*/src/droidplug/java' | head -1)
 (cd "$JAVA_DIR" && ./gradlew assembleRelease)
 mkdir -p libs
@@ -50,10 +52,13 @@ API 31+ uses `BLUETOOTH_SCAN` (`neverForLocation`) and `BLUETOOTH_CONNECT`; the
 legacy Bluetooth and location permissions are capped at `maxSdkVersion=30`.
 `INTERNET` is only consumed by the opt-in AI frame explainer.
 
-btleplug does not request runtime permissions. On API 31+ the app must obtain
-`BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` before the first `Adapter` is created; the
-manifest declares them, but a runtime request UI is not part of this crate yet.
-Without it the first scan is denied and the surfaces stay empty.
+btleplug does not request runtime permissions. `OpenWatchActivity` (a
+`NativeActivity` subclass) asks for `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` on
+API 31+ and `ACCESS_FINE_LOCATION` on older APIs. Its result is forwarded to a
+native callback registered before the request, so btleplug's global adapter is
+created only after the grant. Denial logs an error and stops without touching
+BLE — no empty UI is presented as success. The Java/native permission handshake
+can only be verified on a device; CI just compiles and packages it.
 
 ## CI
 

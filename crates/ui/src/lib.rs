@@ -7,8 +7,9 @@
 
 slint::include_modules!();
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use slint::ComponentHandle;
 
@@ -25,22 +26,50 @@ pub use link::{connect_watch, ConnectionLink};
 
 /// Build, populate and run the shell with supplied state and options.
 pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
+    run_with_opts(state, options, false)
+}
+
+/// `refresh_on_start` schedules the first read for after the event loop starts
+/// instead of blocking before the first paint.
+fn run_with_opts(
+    state: AppState,
+    options: UiOptions,
+    refresh_on_start: bool,
+) -> Result<(), AppError> {
     let window = AppWindow::new()?;
-    let state = std::rc::Rc::new(std::cell::RefCell::new(state));
+    let state = Rc::new(RefCell::new(state));
     state.borrow().apply_to(&window, &options);
 
     let sync_options = options;
-    {
+    let sync_in_flight = Rc::new(Cell::new(false));
+    let schedule_refresh: Rc<dyn Fn()> = Rc::new({
         let shared = state.clone();
         let view = window.clone_strong();
-        window.on_sync_now(move || {
-            // shortcut: reads are synchronous and wait on the watch's reply
-            // window; move to a worker + timer if a refresh ever stalls.
-            let mut state = shared.borrow_mut();
-            let _ = state.refresh_reads();
-            state.apply_to(&view, &sync_options);
-        });
-    }
+        let in_flight = sync_in_flight.clone();
+        move || {
+            if in_flight.get() {
+                return;
+            }
+            in_flight.set(true);
+            view.set_syncing(true);
+            let shared = shared.clone();
+            let view = view.clone_strong();
+            let flag = in_flight.clone();
+            // The one-shot timer fires after this handler returns, so the
+            // disabled/"Syncing…" state gets painted before the blocking read.
+            slint::Timer::single_shot(Duration::ZERO, move || {
+                let mut state = shared.borrow_mut();
+                let _ = state.refresh_reads();
+                state.apply_to(&view, &sync_options);
+                view.set_syncing(false);
+                flag.set(false);
+            });
+        }
+    });
+    window.on_sync_now({
+        let schedule = schedule_refresh.clone();
+        move || schedule()
+    });
 
     let workbench = Rc::new(RefCell::new(WorkbenchData::default()));
     window.set_wb_endpoint(slint::SharedString::from(workbench.borrow().endpoint()));
@@ -233,21 +262,24 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
         });
     }
 
+    if refresh_on_start {
+        schedule_refresh();
+    }
+
     window.run()?;
     Ok(())
 }
 
 /// Run the shell against a live watch connection.
 ///
-/// The link's connection state is applied to the status strip, the surfaces
-/// are refreshed from the watch before the first paint, and `run_with` drives
-/// `apply_to` plus all the pane callbacks.
+/// The link's connection state is applied to the status strip; the first read
+/// and every later "Sync now" use the same deferred, guarded refresh path, so
+/// neither blocks before the first paint nor stacks overlapping refreshes.
 pub fn run_live(link: impl DeviceLink + 'static, options: UiOptions) -> Result<(), AppError> {
     let connection = link.connection();
     let mut state = AppState::with_link(link, bridge::system_now);
     state.connection = connection;
-    state.refresh_reads()?;
-    run_with(state, options)
+    run_with_opts(state, options, true)
 }
 
 /// Run the shell with default state and options.

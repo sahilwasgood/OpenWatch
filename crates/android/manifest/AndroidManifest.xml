@@ -22,7 +22,7 @@
         android:label="OpenWatch"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
-            android:name="android.app.NativeActivity"
+            android:name=".OpenWatchActivity"
             android:label="OpenWatch"
             android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|uiMode|density">

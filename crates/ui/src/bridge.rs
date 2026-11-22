@@ -245,8 +245,12 @@ fn parse_goals(bytes: &[u8]) -> Vec<(u8, u32)> {
         .collect()
 }
 
+/// Reply window for one read query. Kept short because a full refresh issues
+/// ~13 queries; the write path still enforces the protocol's 350 ms spacing.
+pub const REFRESH_WAIT_MS: u64 = 150;
+
 fn read(link: &dyn DeviceLink, cmd: u8, payload: &[u8]) -> Option<Value> {
-    let frame = link.query(cmd, payload, 500).ok()?;
+    let frame = link.query(cmd, payload, REFRESH_WAIT_MS).ok()?;
     decode(frame.cmd, &frame.payload)
 }
 
