@@ -1,0 +1,9 @@
+[package]
+name = "openwatch-android"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+openwatch-core = { path = "../core" }
+slint = "1.19"
