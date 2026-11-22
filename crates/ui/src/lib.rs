@@ -54,6 +54,16 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
     {
         let shared = workbench.clone();
         let view = window.clone_strong();
+        window.on_key_edited(move |key| {
+            let mut wb = shared.borrow_mut();
+            wb.set_key(key.to_string());
+            wb.apply_to(&view);
+        });
+    }
+
+    {
+        let shared = workbench.clone();
+        let view = window.clone_strong();
         window.on_preview_payload(move || {
             let mut wb = shared.borrow_mut();
             wb.set_note(view.get_wb_note().to_string());
@@ -66,7 +76,7 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
         let shared = workbench.clone();
         let view = window.clone_strong();
         window.on_explain_frame(move || {
-            let (config, hex) = {
+            let (config, hex, note) = {
                 let mut wb = shared.borrow_mut();
                 wb.set_note(view.get_wb_note().to_string());
                 wb.set_endpoint(view.get_wb_endpoint().to_string());
@@ -85,12 +95,12 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
                 let config = wb.config();
                 wb.mark_sending();
                 wb.apply_to(&view);
-                (config, hex)
+                (config, hex, wb.note().to_string())
             };
             // shortcut: synchronous POST keeps the generated window handle off
             // other threads (it is !Send); move to a channel + timer if a call
             // ever takes long enough to block the UI.
-            let result = ai::explain_blocking(&config, &hex);
+            let result = ai::explain_blocking_with_note(&config, &hex, &note);
             let mut wb = shared.borrow_mut();
             wb.set_explanation(result);
             wb.apply_to(&view);
@@ -240,9 +250,15 @@ mod tests {
             "Exact payload (review before send)",
             "S source / U unverified",
             "Confirm",
+            "key-edited",
         ] {
             assert!(workbench.contains(token), "workbench lost {token}");
         }
+        let shell = include_str!("../ui/app-window.slint");
+        assert!(
+            shell.contains("key-edited"),
+            "key editing is not wired to the host"
+        );
         for surface in [
             include_str!("../ui/today.slint"),
             include_str!("../ui/device.slint"),

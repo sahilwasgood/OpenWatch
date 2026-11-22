@@ -190,6 +190,11 @@ impl WorkbenchData {
         self.note = note;
     }
 
+    /// The note that was reviewed in the preview and sent with the frame.
+    pub fn note(&self) -> &str {
+        &self.note
+    }
+
     pub fn set_endpoint(&mut self, endpoint: String) {
         self.endpoint = endpoint;
     }
@@ -302,7 +307,15 @@ impl WorkbenchData {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use crate::ai;
+
     use super::*;
+
+    thread_local! {
+        static SENT: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
 
     fn row(id: i64, hex: &str, confidence: &str) -> FrameRow {
         FrameRow {
@@ -340,6 +353,48 @@ mod tests {
         assert!(actions.iter().all(|action| matches!(action.tag, "S" | "U")));
         assert!(actions.iter().any(|action| action.tag == "S"));
         assert!(actions.iter().any(|action| action.tag == "U"));
+    }
+
+    #[test]
+    fn preview_is_byte_identical_to_the_transmitted_payload() {
+        SENT.with(|sent| *sent.borrow_mut() = None);
+        ai::set_transport(|_, _, body| {
+            SENT.with(|sent| *sent.borrow_mut() = Some(body.to_string()));
+            Ok(r#"{"choices":[{"message":{"content":"ok"}}]}"#.into())
+        });
+
+        let mut data = WorkbenchData::default();
+        data.set_frames(vec![row(1, "FEEA200553", "live")]);
+        data.select(1);
+        data.set_note("Why two bytes?".into());
+        data.set_key("sk-local".into());
+        data.preview();
+        let reviewed = data.preview.clone();
+        assert_ne!(
+            reviewed,
+            payload("FEEA200553", ""),
+            "note must be in the preview"
+        );
+
+        ai::explain_blocking_with_note(&data.config(), data.selected_hex().unwrap(), &data.note)
+            .unwrap();
+        assert_eq!(
+            SENT.with(|sent| sent.borrow().clone()),
+            Some(reviewed),
+            "the body sent must be exactly the one the user reviewed"
+        );
+    }
+
+    #[test]
+    fn key_edits_toggle_the_enabled_state() {
+        let mut data = WorkbenchData::default();
+        assert!(!ai::enabled(&data.config()));
+        data.set_key("sk-local".into());
+        assert!(ai::enabled(&data.config()));
+        assert!(data.status.contains("on"));
+        data.set_key("   ".into());
+        assert!(!ai::enabled(&data.config()));
+        assert!(data.status.contains("off"));
     }
 
     #[test]

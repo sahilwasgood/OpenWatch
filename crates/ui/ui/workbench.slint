@@ -148,6 +148,7 @@ export component WorkbenchSurface inherits Rectangle {
     in property <string> confirmed: "";
 
     callback select-frame(int);
+    callback key-edited(string);
     callback preview-payload();
     callback explain-frame();
     callback request-action(string);
@@ -330,6 +331,7 @@ export component WorkbenchSurface inherits Rectangle {
                 input-type: password;
                 color: Theme.text-primary;
                 font-size: Theme.font-micro;
+                edited => { root.key-edited(self.text); }
             }
         }
         Text { x: Theme.space-3; y: 112px; text: "Note"; color: Theme.text-secondary; font-size: Theme.font-micro; }

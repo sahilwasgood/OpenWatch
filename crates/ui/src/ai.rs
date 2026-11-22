@@ -80,10 +80,21 @@ pub async fn explain(config: &AiConfig, frame_hex: &str) -> Result<String, AiErr
 /// Same path as [`explain`] for callers without an async runtime (the Slint
 /// host calls it directly). The no-key guard is shared by both.
 pub fn explain_blocking(config: &AiConfig, frame_hex: &str) -> Result<String, AiError> {
+    explain_blocking_with_note(config, frame_hex, "")
+}
+
+/// Note-aware path used by the Workbench: transmits the exact body that
+/// [`crate::data_view::WorkbenchData::preview`] showed to the user. The no-key
+/// guard is identical to [`explain`], so an empty key still makes zero requests.
+pub fn explain_blocking_with_note(
+    config: &AiConfig,
+    frame_hex: &str,
+    note: &str,
+) -> Result<String, AiError> {
     if !enabled(config) {
         return Err(AiError::Disabled);
     }
-    let body = payload(frame_hex, "");
+    let body = payload(frame_hex, note);
     let key = config.key.as_deref().unwrap_or_default();
     let raw = POST.with(|slot| (slot.borrow())(&config.endpoint, key, &body))?;
     let value: Value = serde_json::from_str(&raw)
@@ -187,6 +198,18 @@ mod tests {
             0,
             "no request may leave the device without opt-in"
         );
+    }
+
+    #[test]
+    fn note_aware_path_keeps_the_no_key_guard() {
+        CALLS.with(|calls| calls.set(0));
+        set_transport(|_, _, _| {
+            CALLS.with(|calls| calls.set(calls.get() + 1));
+            Ok("{}".into())
+        });
+        let result = explain_blocking_with_note(&config(None), "FEEA200553", "a note");
+        assert!(matches!(result, Err(AiError::Disabled)), "{result:?}");
+        assert_eq!(CALLS.with(|calls| calls.get()), 0);
     }
 
     #[test]

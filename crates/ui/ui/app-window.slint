@@ -156,6 +156,7 @@ component WorkbenchPane inherits Rectangle {
     in property <string> pending: "";
     in property <string> confirmed: "";
     callback select-frame(int);
+    callback key-edited(string);
     callback preview-payload();
     callback explain-frame();
     callback request-action(string);
@@ -194,6 +195,7 @@ component WorkbenchPane inherits Rectangle {
         pending: root.pending;
         confirmed: root.confirmed;
         select-frame(id) => { root.select-frame(id); }
+        key-edited(text) => { root.key-edited(text); }
         preview-payload() => { root.preview-payload(); }
         explain-frame() => { root.explain-frame(); }
         request-action(key) => { root.request-action(key); }
@@ -237,6 +239,7 @@ export component AppWindow inherits Window {
     in-out property <string> wb-pending: "";
     in-out property <string> wb-confirmed: "";
     callback select-frame(int);
+    callback key-edited(string);
     callback preview-payload();
     callback explain-frame();
     callback request-action(string);
@@ -448,6 +451,7 @@ export component AppWindow inherits Window {
             pending: root.wb-pending;
             confirmed: root.wb-confirmed;
             select-frame(id) => { root.select-frame(id); }
+            key-edited(text) => { root.key-edited(text); }
             preview-payload() => { root.preview-payload(); }
             explain-frame() => { root.explain-frame(); }
             request-action(key) => { root.request-action(key); }
