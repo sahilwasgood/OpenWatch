@@ -1,0 +1,196 @@
+// OpenWatch desktop/Android shell: four destinations, no nested maze.
+import { Theme, GlassCard, Navigation } from "theme.slint";
+
+// A destination pane uses the short reduced-motion cross-fade rather than the
+// full 250 ms state transition when the active destination changes.
+component DestinationPane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <string> heading: "";
+    in property <string> detail: "";
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6;
+        text: root.heading;
+        color: Theme.text-primary;
+        font-size: Theme.font-title;
+        font-weight: 600;
+    }
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6 + Theme.font-title + Theme.space-3;
+        text: root.detail;
+        color: Theme.text-secondary;
+        font-size: Theme.font-body;
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+export component AppWindow inherits Window {
+    // State applied by the Rust bridge.
+    in-out property <string> device-name: "—";
+    in-out property <int> battery: -1;
+    in-out property <string> connection-state: "idle";
+    in-out property <string> last-sync: "never";
+    in-out property <int> active-tab: 0;
+
+    // Accessibility toggles (Slint 1.19 has no system detection for these).
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+
+    // The four navigation destinations, exposed for the generated-type test.
+    out property <[string]> navigation-destinations: Navigation.destinations;
+
+    width: 1040px;
+    height: 720px;
+    title: "OpenWatch";
+    background: Theme.zinc-950;
+
+    // Sidebar chrome: solid base plus an optional glass layer.
+    Rectangle {
+        width: 220px;
+        height: 100%;
+        background: Theme.solid-surface;
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            visible: !root.reduced-transparency;
+            background: Theme.glass-card-dark;
+            backdrop-blur: Theme.glass-blur;
+        }
+        Rectangle {
+            x: 219px;
+            width: 1px;
+            height: 100%;
+            background: Theme.card-edge;
+        }
+        Text {
+            x: Theme.space-6;
+            y: Theme.space-6;
+            text: "OpenWatch";
+            color: Theme.text-primary;
+            font-size: Theme.font-title;
+            font-weight: 700;
+        }
+        for destination[i] in Navigation.destinations: Rectangle {
+            x: Theme.space-3;
+            y: 88px + i * 52px;
+            width: 196px;
+            height: 44px;
+            background: root.active-tab == i ? Theme.accent : transparent;
+            border-radius: Theme.radius-sm;
+            animate background {
+                duration: Theme.motion-standard;
+                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            Text {
+                x: Theme.space-3;
+                y: (parent.height - self.height) / 2;
+                text: destination;
+                color: Theme.text-primary;
+                font-size: Theme.font-body;
+            }
+            TouchArea {
+                clicked => {
+                    root.active-tab = i;
+                }
+            }
+        }
+    }
+
+    // Connection strip: device, battery, state and last sync.
+    Rectangle {
+        x: 232px;
+        y: 16px;
+        width: root.width - 248px;
+        height: 56px;
+        GlassCard {
+            width: 100%;
+            height: 100%;
+            card-radius: Theme.radius-md;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+        }
+        Text {
+            x: Theme.space-6;
+            y: 16px;
+            text: root.device-name;
+            color: Theme.text-primary;
+            font-size: Theme.font-body;
+            font-weight: 600;
+        }
+        Text {
+            x: root.width - 440px;
+            y: 16px;
+            text: root.battery >= 0 ? "\{root.battery}%" : "—";
+            color: Theme.text-secondary;
+            font-size: Theme.font-caption;
+            font-family: Theme.numeral-font;
+        }
+        Text {
+            x: root.width - 360px;
+            y: 16px;
+            text: root.connection-state;
+            color: Theme.text-secondary;
+            font-size: Theme.font-caption;
+        }
+        Text {
+            x: root.width - 220px;
+            y: 16px;
+            text: "Synced \{root.last-sync}";
+            color: Theme.text-secondary;
+            font-size: Theme.font-caption;
+        }
+    }
+
+    // Content area: one pane per destination, stacked for cross-fade.
+    Rectangle {
+        x: 232px;
+        y: 88px;
+        width: root.width - 248px;
+        height: root.height - 104px;
+        DestinationPane {
+            active: root.active-tab == 0;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            heading: "Today";
+            detail: "Metric cards and connection strip.";
+        }
+        DestinationPane {
+            active: root.active-tab == 1;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            heading: "Device";
+            detail: "Identity, firmware and settings.";
+        }
+        DestinationPane {
+            active: root.active-tab == 2;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            heading: "Workbench";
+            detail: "Raw inspector and interpretation.";
+        }
+        DestinationPane {
+            active: root.active-tab == 3;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            heading: "Data";
+            detail: "History, export and local store.";
+        }
+    }
+}

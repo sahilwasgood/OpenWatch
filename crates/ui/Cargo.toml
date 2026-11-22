@@ -1,0 +1,13 @@
+[package]
+name = "openwatch-ui"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+openwatch-core = { path = "../core" }
+slint = "1.19"
+thiserror = "2"
+
+[build-dependencies]
+slint-build = "1.19"
