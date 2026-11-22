@@ -78,8 +78,8 @@ mod tests {
     #[test]
     fn live_opcodes() {
         for cmd in [
-            0x2B, 0x2E, 0xBA, 0x29, 0xBB, 0x84, 0x35, 0x59, 0x2F, 0x81, 0x82, 0x27, 0x2C,
-            0x39, 0x16, 0x17, 0x31, 0x41, 0x6D,
+            0x2B, 0x2E, 0xBA, 0x29, 0xBB, 0x84, 0x35, 0x59, 0x2F, 0x81, 0x82, 0x27, 0x2C, 0x39,
+            0x16, 0x17, 0x31, 0x41, 0x6D,
         ] {
             assert_eq!(confidence(cmd), Confidence::Live, "cmd {cmd:02X}");
         }
@@ -103,19 +103,31 @@ mod tests {
     fn registry_covers_every_opcode() {
         let ops = all_opcodes();
         for cmd in [
-            0x2B, 0x2E, 0xBA, 0x29, 0xBB, 0x84, 0x35, 0x59, 0x2F, 0x81, 0x82, 0x27, 0x2C,
-            0x39, 0x16, 0x17, 0x31, 0x41, 0x6D, 0x43, 0x42, 0xB5, 0x71, 0x1F, 0x66, 0x62,
-            0x83, 0x85, 0xB6,
+            0x2B, 0x2E, 0xBA, 0x29, 0xBB, 0x84, 0x35, 0x59, 0x2F, 0x81, 0x82, 0x27, 0x2C, 0x39,
+            0x16, 0x17, 0x31, 0x41, 0x6D, 0x43, 0x42, 0xB5, 0x71, 0x1F, 0x66, 0x62, 0x83, 0x85,
+            0xB6,
         ] {
             assert!(ops.iter().any(|(c, _, _)| *c == cmd), "missing {cmd:02X}");
         }
         // B9 subcommands are listed separately with their own confidence.
-        assert!(ops.iter().any(|(c, n, l)| *c == 0xB9 && *l == Confidence::Live && n.contains("goals")));
-        assert!(ops.iter().any(|(c, n, l)| *c == 0xB9 && *l == Confidence::Source && n.contains("alarm")));
+        assert!(ops
+            .iter()
+            .any(|(c, n, l)| *c == 0xB9 && *l == Confidence::Live && n.contains("goals")));
+        assert!(ops
+            .iter()
+            .any(|(c, n, l)| *c == 0xB9 && *l == Confidence::Source && n.contains("alarm")));
         // File-channel features are unverified.
-        assert!(ops.iter().any(|(_, n, l)| *l == Confidence::Unverified && n.contains("face upload")));
-        assert!(ops.iter().any(|(_, n, l)| *l == Confidence::Unverified && n.contains("DFU")));
-        assert!(ops.iter().any(|(_, n, l)| *l == Confidence::Unverified && n.contains("AGPS")));
-        assert!(ops.iter().any(|(_, n, l)| *l == Confidence::Unverified && n.contains("OTA")));
+        assert!(ops
+            .iter()
+            .any(|(_, n, l)| *l == Confidence::Unverified && n.contains("face upload")));
+        assert!(ops
+            .iter()
+            .any(|(_, n, l)| *l == Confidence::Unverified && n.contains("DFU")));
+        assert!(ops
+            .iter()
+            .any(|(_, n, l)| *l == Confidence::Unverified && n.contains("AGPS")));
+        assert!(ops
+            .iter()
+            .any(|(_, n, l)| *l == Confidence::Unverified && n.contains("OTA")));
     }
 }

@@ -46,7 +46,11 @@ pub fn decode(cmd: u8, payload: &[u8]) -> Option<Value> {
                 return None;
             }
             Some(Value::Text(
-                payload.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("."),
+                payload
+                    .iter()
+                    .map(|b| b.to_string())
+                    .collect::<Vec<_>>()
+                    .join("."),
             ))
         }
         0x2B => Some(Value::Number(be_u32(1)?)),
@@ -94,18 +98,27 @@ mod tests {
 
     #[test]
     fn language_mask() {
-        assert_eq!(decode(0x2E, &[1]), Some(Value::Text("international".into())));
+        assert_eq!(
+            decode(0x2E, &[1]),
+            Some(Value::Text("international".into()))
+        );
     }
 
     #[test]
     fn firmware_version() {
-        assert_eq!(decode(0xBA, &[1, 0, 40]), Some(Value::Text("1.0.40".into())));
+        assert_eq!(
+            decode(0xBA, &[1, 0, 40]),
+            Some(Value::Text("1.0.40".into()))
+        );
     }
 
     #[test]
     fn steps_be_u32() {
         // [prefix][BE u32] -> 0x00001DF3
-        assert_eq!(decode(0x2B, &[0, 0, 0, 0x1D, 0xF3]), Some(Value::Number(0x00001DF3)));
+        assert_eq!(
+            decode(0x2B, &[0, 0, 0, 0x1D, 0xF3]),
+            Some(Value::Number(0x00001DF3))
+        );
     }
 
     #[test]
@@ -142,7 +155,9 @@ mod tests {
 
     #[test]
     fn b9_goals_are_type_le_u32_pairs_from_byte_two() {
-        let payload = [0x10, 0x00, 0x01, 0x10, 0x27, 0x00, 0x00, 0x02, 0x40, 0x1F, 0x00, 0x00];
+        let payload = [
+            0x10, 0x00, 0x01, 0x10, 0x27, 0x00, 0x00, 0x02, 0x40, 0x1F, 0x00, 0x00,
+        ];
         match decode(0xB9, &payload) {
             Some(Value::Bytes(b)) => {
                 assert_eq!(b, payload);
@@ -174,24 +189,42 @@ mod tests {
 
     #[test]
     fn select_reply_skips_keepalive_and_returns_first_match() {
-        let keepalive = Frame { cmd: 0xF9, payload: vec![] };
-        let unrelated = Frame { cmd: 0x2B, payload: vec![0] };
-        let later = Frame { cmd: 0x2E, payload: vec![0] };
+        let keepalive = Frame {
+            cmd: 0xF9,
+            payload: vec![],
+        };
+        let unrelated = Frame {
+            cmd: 0x2B,
+            payload: vec![0],
+        };
+        let later = Frame {
+            cmd: 0x2E,
+            payload: vec![0],
+        };
         let frames = [
             keepalive,
             unrelated,
-            Frame { cmd: 0x2E, payload: vec![1] },
+            Frame {
+                cmd: 0x2E,
+                payload: vec![1],
+            },
             later,
         ];
         assert_eq!(
             select_reply(&frames, 0x2E),
-            Some(Frame { cmd: 0x2E, payload: vec![1] })
+            Some(Frame {
+                cmd: 0x2E,
+                payload: vec![1]
+            })
         );
     }
 
     #[test]
     fn select_reply_none_when_no_match() {
-        let frames = [Frame { cmd: 0xF9, payload: vec![] }];
+        let frames = [Frame {
+            cmd: 0xF9,
+            payload: vec![],
+        }];
         assert_eq!(select_reply(&frames, 0x2E), None);
     }
 

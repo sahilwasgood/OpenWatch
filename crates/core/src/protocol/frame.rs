@@ -87,13 +87,7 @@ mod tests {
         let payload: Vec<u8> = (0..300).map(|i| i as u8).collect();
         let bytes = packet(0xC3, &payload);
         assert_eq!(&bytes[..4], &[0xFE, 0xEA, 0x21, 0x31]);
-        assert_eq!(
-            parse(&bytes).unwrap(),
-            Frame {
-                cmd: 0xC3,
-                payload,
-            }
-        );
+        assert_eq!(parse(&bytes).unwrap(), Frame { cmd: 0xC3, payload });
     }
 
     #[test]
