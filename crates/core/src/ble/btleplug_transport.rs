@@ -71,6 +71,11 @@ fn find_char_in_service(
         .ok_or_else(|| BleError::CharacteristicNotFound(format!("{short:04X} on {service:04X}")))
 }
 
+/// Stopping the scan is best-effort, but a failure must not be swallowed.
+fn warn_stop_scan_failure(error: btleplug::Error) {
+    tracing::warn!(?error, "failed to stop BLE scan after device discovery");
+}
+
 #[async_trait]
 impl BleTransport for BtleplugTransport {
     async fn connect(&mut self, key: &DeviceKey) -> Result<(), BleError> {
@@ -100,7 +105,9 @@ impl BleTransport for BtleplugTransport {
             }
         }
         .ok_or_else(|| BleError::DeviceNotFound(format!("{key:?}")))?;
-        let _ = self.adapter.stop_scan().await;
+        if let Err(error) = self.adapter.stop_scan().await {
+            warn_stop_scan_failure(error);
+        }
 
         peripheral.connect().await?;
         peripheral.discover_services().await?;
@@ -152,5 +159,42 @@ impl BleTransport for BtleplugTransport {
         let peripheral = self.peripheral.as_ref().ok_or(BleError::NotConnected)?;
         peripheral.disconnect().await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+
+    /// Minimal subscriber that counts WARN events without new dependencies.
+    struct WarnCounter(Arc<Mutex<usize>>);
+
+    impl tracing::Subscriber for WarnCounter {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() == tracing::Level::WARN
+        }
+        fn new_span(&self, _attrs: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            if *event.metadata().level() == tracing::Level::WARN {
+                *self.0.lock().unwrap() += 1;
+            }
+        }
+        fn enter(&self, _span: &tracing::span::Id) {}
+        fn exit(&self, _span: &tracing::span::Id) {}
+    }
+
+    #[test]
+    fn stop_scan_failure_emits_a_warning() {
+        let count = Arc::new(Mutex::new(0));
+        tracing::subscriber::with_default(WarnCounter(count.clone()), || {
+            warn_stop_scan_failure(btleplug::Error::NotSupported("test".into()));
+        });
+        assert_eq!(*count.lock().unwrap(), 1);
     }
 }

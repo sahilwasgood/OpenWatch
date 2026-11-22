@@ -64,16 +64,24 @@ impl<T: BleTransport> ConnectionManager<T> {
     }
 
     /// State machine shared by [`connect`](Self::connect) and the tests.
-    /// One connection attempt per supplied backoff; sleep that long after a
-    /// failed attempt before retrying.
+    /// One connection attempt per supplied backoff; sleep that long only when
+    /// another attempt follows, so the final failure returns immediately.
     async fn connect_with_backoffs(&mut self, backoffs: &[Duration]) -> Result<(), BleError> {
         self.state = ConnectionState::Scanning;
         let mut last_error = None;
-        for backoff in backoffs {
+        for (i, backoff) in backoffs.iter().enumerate() {
             self.state = ConnectionState::Connecting;
             match self.transport.connect(&self.key).await {
                 Ok(()) => {
-                    let stream = self.transport.subscribe().await?;
+                    let stream = match self.transport.subscribe().await {
+                        Ok(stream) => stream,
+                        Err(error) => {
+                            // The watch was reachable; only notification setup failed.
+                            // Mark for reconnect rather than falsely reporting NotFound.
+                            self.state = ConnectionState::Reconnecting;
+                            return Err(error);
+                        }
+                    };
                     let tx = self.notify_tx.clone();
                     tokio::spawn(async move {
                         let mut stream = stream;
@@ -91,7 +99,9 @@ impl<T: BleTransport> ConnectionManager<T> {
                 Err(error) => {
                     last_error = Some(error);
                     self.state = ConnectionState::Reconnecting;
-                    tokio::time::sleep(*backoff).await;
+                    if i + 1 < backoffs.len() {
+                        tokio::time::sleep(*backoff).await;
+                    }
                 }
             }
         }
@@ -198,6 +208,28 @@ mod tests {
         }
     }
 
+    /// Transport whose connect succeeds but whose subscribe always fails.
+    struct SubscribeFailingTransport;
+
+    #[async_trait]
+    impl BleTransport for SubscribeFailingTransport {
+        async fn connect(&mut self, _key: &DeviceKey) -> Result<(), BleError> {
+            Ok(())
+        }
+        async fn write(&self, _frame: &[u8]) -> Result<(), BleError> {
+            Ok(())
+        }
+        async fn subscribe(&self) -> Result<Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>, BleError> {
+            Err(BleError::NotConnected)
+        }
+        async fn read_battery(&self) -> Result<u8, BleError> {
+            Ok(100)
+        }
+        async fn disconnect(&self) -> Result<(), BleError> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn default_backoffs_are_one_two_four_seconds() {
         assert_eq!(
@@ -218,6 +250,25 @@ mod tests {
         let result = manager.connect_with_backoffs(&[Duration::ZERO; 3]).await;
         assert!(result.is_err());
         assert_eq!(manager.state(), ConnectionState::NotFound);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn backoff_sleeps_one_fewer_than_attempts() {
+        let step = Duration::from_millis(10);
+        let backoffs = vec![step; 5];
+        let start = tokio::time::Instant::now();
+        let mut manager = ConnectionManager::new(FailingTransport, key());
+        assert!(manager.connect_with_backoffs(&backoffs).await.is_err());
+        // 5 failed attempts, 4 sleeps: the final attempt does not sleep.
+        assert_eq!(start.elapsed(), step * ((backoffs.len() - 1) as u32));
+    }
+
+    #[tokio::test]
+    async fn subscribe_failure_does_not_leave_state_connecting() {
+        let mut manager = ConnectionManager::new(SubscribeFailingTransport, key());
+        assert!(manager.connect().await.is_err());
+        assert_ne!(manager.state(), ConnectionState::Connecting);
+        assert_eq!(manager.state(), ConnectionState::Reconnecting);
     }
 
     #[tokio::test]

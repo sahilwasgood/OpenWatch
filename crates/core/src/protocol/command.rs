@@ -16,7 +16,13 @@ fn capped_utf8(text: &str) -> &[u8] {
 /// Four UTF-16BE code units, space-padded.
 fn utf16be_4(text: &str) -> [u8; 8] {
     let mut out = [0x00, 0x20, 0x00, 0x20, 0x00, 0x20, 0x00, 0x20];
-    for (i, unit) in text.encode_utf16().take(4).enumerate() {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let mut len = units.len().min(4);
+    // A cut after a high surrogate would strand its low half; drop it instead.
+    if len > 0 && (0xD800..=0xDBFF).contains(&units[len - 1]) {
+        len -= 1;
+    }
+    for (i, unit) in units[..len].iter().enumerate() {
         out[i * 2..i * 2 + 2].copy_from_slice(&unit.to_be_bytes());
     }
     out
@@ -60,7 +66,9 @@ pub fn set_dnd(start: (u8, u8), end: (u8, u8), enable: bool) -> Vec<u8> {
 /// Create or overwrite an alarm (`B9 05 00` + 8-byte record).
 pub fn set_alarm(slot: u8, hour: u8, minute: u8, repeat: u8, date: (u16, u8, u8)) -> Vec<u8> {
     let (year, month, day) = date;
-    let packed = (((year.wrapping_sub(2015) & 0xFF) << 4) | (u16::from(month) & 0x0F)) as u8;
+    // Protocol year is 4 bits (2015..=2030); clamp so it cannot bleed into month.
+    let year = year.clamp(2015, 2030);
+    let packed = (((year - 2015) << 4) | (u16::from(month) & 0x0F)) as u8;
     let mut payload = vec![0x05, 0x00];
     payload.extend_from_slice(&[slot, 0x01, repeat, hour, minute, packed, day, 0x00]);
     packet(0xB9, &payload)
@@ -167,5 +175,20 @@ mod tests {
         let frame = message(&format!("{}€", "é".repeat(119)));
         assert_eq!(frame.len() - 5, 239, "238 bytes kept, € dropped whole");
         assert!(std::str::from_utf8(&frame[6..]).is_ok());
+    }
+
+    #[test]
+    fn utf16be_4_never_ends_with_a_lone_high_surrogate() {
+        let enc = utf16be_4("ABC😀");
+        assert_ne!(&enc[6..8], &0xD83Du16.to_be_bytes());
+        assert_eq!(enc, [0x00, 0x41, 0x00, 0x42, 0x00, 0x43, 0x00, 0x20]);
+    }
+
+    #[test]
+    fn set_alarm_clamps_year_without_touching_month() {
+        let high = set_alarm(0, 7, 30, 0, (2031, 10, 19));
+        assert_eq!(hex(&high), hex(&set_alarm(0, 7, 30, 0, (2030, 10, 19))));
+        assert_eq!(high[12] & 0x0F, 10, "month nibble intact");
+        assert_eq!(high[12] >> 4, 15, "year clamped to 2030");
     }
 }
