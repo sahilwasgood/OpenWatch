@@ -164,12 +164,12 @@ workbench; source-derived features carry a visible "unverified" tag; sync never 
 6. Feature parity pass against the checklist, then continuous loop: research → implement →
    test → review → fix → persist.
 
-## 9. Open questions for the operator
+## 9. Decisions and live verification
 
-1. **Live verification and state-changing writes.** Should the build assume a charged, worn
-   watch and blanket approval to exercise setters so `S` opcodes can be promoted to `L`, or must
-   everything ship as `S`/`U` with fixture tests only? This changes acceptance criteria and
-   sequencing, not the feature set.
+**Operator decision:** exercise every command on the real watch and promote it to live-verified.
+State-changing writes are approved for the purposes of verification; where practical, restore the
+original value afterward and record before/after reads. The build loop includes a hardware pass
+that updates the confidence registry from `S`/`U` to `L` with captured frames and timestamps.
 
 Recorded calls, not questions: Fire-Boltt parity comes before NSW-434 protocol work (NSW stays
 scaffolded); BYOK AI with no account; manual weather in v1; installed-firmware-only with no
