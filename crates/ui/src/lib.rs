@@ -6,14 +6,27 @@
 
 slint::include_modules!();
 
+use slint::ComponentHandle;
+
 pub mod bridge;
 
-pub use bridge::{AppError, AppState, UiOptions};
+pub use bridge::{Action, AppError, AppState, DeviceLink, Reading, UiOptions};
 
 /// Build, populate and run the shell with supplied state and options.
 pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
     let window = AppWindow::new()?;
-    state.apply_to(&window, &options);
+    let state = std::rc::Rc::new(std::cell::RefCell::new(state));
+    state.borrow().apply_to(&window, &options);
+
+    let shared = state.clone();
+    let view = window.clone_strong();
+    window.on_reorder_card(move |key, delta| {
+        let key = key.to_string();
+        let mut state = shared.borrow_mut();
+        state.move_card(&key, delta);
+        state.apply_cards(&view);
+    });
+
     window.run()?;
     Ok(())
 }

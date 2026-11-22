@@ -1,5 +1,7 @@
 // OpenWatch desktop/Android shell: four destinations, no nested maze.
 import { Theme, GlassCard, Navigation } from "theme.slint";
+import { TodaySurface, CardView } from "today.slint";
+import { DeviceSurface, RowView } from "device.slint";
 
 // A destination pane uses the short reduced-motion cross-fade rather than the
 // full 250 ms state transition when the active destination changes.
@@ -50,6 +52,86 @@ component DestinationPane inherits Rectangle {
     }
 }
 
+// Today and Device panes reuse the shell chrome and short cross-fade, then
+// hand their content area to the dedicated surface components.
+component TodayPane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <[CardView]> cards: [];
+    callback reorder(string, int);
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6;
+        text: "Today";
+        color: Theme.text-primary;
+        font-size: Theme.font-title;
+        font-weight: 600;
+    }
+    TodaySurface {
+        y: 56px;
+        width: 100%;
+        height: parent.height - 56px;
+        cards: root.cards;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+        reorder(key, delta) => { root.reorder(key, delta); }
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+component DevicePane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <[RowView]> rows: [];
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6;
+        text: "Device";
+        color: Theme.text-primary;
+        font-size: Theme.font-title;
+        font-weight: 600;
+    }
+    DeviceSurface {
+        y: 56px;
+        width: 100%;
+        height: parent.height - 56px;
+        rows: root.rows;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
 export component AppWindow inherits Window {
     // State applied by the Rust bridge.
     in-out property <string> device-name: "—";
@@ -57,6 +139,9 @@ export component AppWindow inherits Window {
     in-out property <string> connection-state: "idle";
     in-out property <string> last-sync: "never";
     in-out property <int> active-tab: 0;
+    in-out property <[CardView]> metric-cards: [];
+    in-out property <[RowView]> device-values: [];
+    callback reorder-card(string, int);
 
     // Accessibility toggles (Slint 1.19 has no system detection for these).
     in property <bool> reduced-transparency: false;
@@ -227,19 +312,18 @@ export component AppWindow inherits Window {
         y: 88px;
         width: root.width - 248px;
         height: root.height - 104px;
-        DestinationPane {
+        TodayPane {
             active: root.active-tab == 0;
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
-            heading: "Today";
-            detail: "Metric cards and connection strip.";
+            cards: root.metric-cards;
+            reorder(key, delta) => { root.reorder-card(key, delta); }
         }
-        DestinationPane {
+        DevicePane {
             active: root.active-tab == 1;
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
-            heading: "Device";
-            detail: "Identity, firmware and settings.";
+            rows: root.device-values;
         }
         DestinationPane {
             active: root.active-tab == 2;

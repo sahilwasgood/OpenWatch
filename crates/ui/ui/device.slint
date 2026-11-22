@@ -1,0 +1,66 @@
+// Device: identity, firmware, settings, message apps, alarms, goals and
+// faces. Every row is human-readable and carries its last-update time.
+import { Theme, GlassCard } from "theme.slint";
+
+export struct RowView {
+    group: string,
+    title: string,
+    value: string,
+    detail: string,
+    updated-at: string,
+}
+
+export component DeviceSurface inherits Rectangle {
+    in property <[RowView]> rows: [];
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+
+    for row[i] in root.rows: Rectangle {
+        x: Theme.space-6 + Math.mod(i, 3) * (parent.width / 3);
+        y: Theme.space-6 + Math.floor(i / 2) * 76px;
+        width: parent.width / 2 - Theme.space-3;
+        height: 68px;
+
+        GlassCard {
+            width: 100%;
+            height: 100%;
+            card-radius: Theme.radius-sm;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+        }
+        Text {
+            x: Theme.space-3;
+            y: Theme.space-2;
+            text: "\{row.group} · \{row.title}";
+            color: Theme.text-secondary;
+            font-size: Theme.font-micro;
+        }
+        Text {
+            x: Theme.space-3;
+            y: 26px;
+            width: parent.width - Theme.space-6;
+            text: row.value;
+            color: Theme.text-primary;
+            font-size: Theme.font-body;
+            font-family: Theme.numeral-font;
+            overflow: elide;
+        }
+        Text {
+            x: Theme.space-3;
+            y: 48px;
+            text: row.detail;
+            color: Theme.text-secondary;
+            font-size: Theme.font-micro;
+        }
+        Text {
+            x: parent.width - 200px;
+            y: Theme.space-2;
+            width: 192px;
+            text: "Updated \{row.updated-at}";
+            color: Theme.text-secondary;
+            font-size: Theme.font-micro;
+            font-family: Theme.numeral-font;
+            horizontal-alignment: right;
+        }
+    }
+}
