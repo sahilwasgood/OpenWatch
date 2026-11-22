@@ -43,11 +43,21 @@ mod tests {
             window.set_connection_state(slint::SharedString::from(state));
             window.get_status_color()
         };
-        assert_eq!(set("connected"), slint::Color::from_rgb_u8(0x30, 0xD1, 0x58));
+        assert_eq!(
+            set("connected"),
+            slint::Color::from_rgb_u8(0x30, 0xD1, 0x58)
+        );
         for state in ["reconnecting", "scanning", "connecting"] {
-            assert_eq!(set(state), slint::Color::from_rgb_u8(0xFF, 0x9F, 0x0A), "{state}");
+            assert_eq!(
+                set(state),
+                slint::Color::from_rgb_u8(0xFF, 0x9F, 0x0A),
+                "{state}"
+            );
         }
-        assert_eq!(set("not found"), slint::Color::from_rgb_u8(0xFF, 0x45, 0x3A));
+        assert_eq!(
+            set("not found"),
+            slint::Color::from_rgb_u8(0xFF, 0x45, 0x3A)
+        );
     }
 
     #[test]
@@ -80,5 +90,4 @@ mod tests {
             assert!(shell.contains(token), "shell does not apply {token}");
         }
     }
-
 }
