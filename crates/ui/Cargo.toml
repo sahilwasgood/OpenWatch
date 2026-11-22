@@ -9,9 +9,11 @@ openwatch-core = { path = "../core" }
 serde_json = "1"
 slint = "1.19"
 thiserror = "2"
+tokio = { version = "1", features = ["rt", "time"] }
 
 [build-dependencies]
 slint-build = "1.19"
 
 [dev-dependencies]
+async-trait = "0.1"
 futures = "0.3"

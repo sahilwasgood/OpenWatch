@@ -142,6 +142,11 @@ impl<T: BleTransport> ConnectionManager<T> {
     pub fn state(&self) -> ConnectionState {
         self.state
     }
+
+    /// Read the watch battery level through the transport.
+    pub async fn battery(&self) -> Result<u8, BleError> {
+        self.transport.read_battery().await
+    }
 }
 
 #[cfg(test)]
@@ -284,6 +289,12 @@ mod tests {
                 payload: vec![1],
             }
         );
+    }
+
+    #[tokio::test]
+    async fn battery_reads_through_the_transport() {
+        let manager = ConnectionManager::new(MockTransport::new(vec![]), key());
+        assert_eq!(manager.battery().await.unwrap(), 100);
     }
 
     #[tokio::test]

@@ -28,6 +28,8 @@ pub enum AppError {
     Device(#[from] BleError),
     #[error("store error: {0}")]
     Store(#[from] openwatch_core::store::StoreError),
+    #[error("async runtime error: {0}")]
+    Runtime(#[from] std::io::Error),
     #[error("no device connection configured")]
     NoLink,
 }
@@ -38,6 +40,12 @@ pub trait DeviceLink: fmt::Debug {
     fn query(&self, cmd: u8, payload: &[u8], wait_ms: u64) -> Result<Frame, AppError>;
     fn write(&self, frame: &[u8]) -> Result<(), AppError>;
     fn battery(&self) -> Option<u8>;
+
+    /// Current connection state, for the shell's status strip. Links that do
+    /// not track a connection report `Idle`.
+    fn connection(&self) -> ConnectionState {
+        ConnectionState::Idle
+    }
 }
 
 /// Write-side actions exposed by the Control affordances and by hosts.
@@ -168,7 +176,7 @@ fn last_sync_label(value: Option<&str>) -> &str {
     value.unwrap_or("never")
 }
 
-fn system_now() -> i64 {
+pub(crate) fn system_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

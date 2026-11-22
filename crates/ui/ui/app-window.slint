@@ -236,6 +236,7 @@ export component AppWindow inherits Window {
     in-out property <[CardView]> metric-cards: [];
     in-out property <[RowView]> device-values: [];
     callback reorder-card(string, int);
+    callback sync-now();
 
     // Workbench raw inspector and opt-in AI panel.
     in-out property <[FrameView]> frames: [];
@@ -441,7 +442,7 @@ export component AppWindow inherits Window {
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
-            sync-touch := TouchArea { }
+            sync-touch := TouchArea { clicked => { root.sync-now(); } }
         }
     }
 

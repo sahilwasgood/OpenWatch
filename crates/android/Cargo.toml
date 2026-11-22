@@ -4,6 +4,16 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[lib]
+name = "openwatch_android"
+crate-type = ["cdylib"]
+
 [dependencies]
 openwatch-core = { path = "../core" }
-slint = "1.19"
+openwatch-ui = { path = "../ui" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+btleplug = "0.13"
+jni = "0.22"
+log = "0.4"
+slint = { version = "1.19", features = ["backend-android-activity-06"] }

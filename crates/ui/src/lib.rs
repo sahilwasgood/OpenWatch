@@ -2,7 +2,8 @@
 //! against this library so the `.slint` documents are compiled exactly once.
 //!
 //! The generated window type never leaves this crate (Slint 1.19 issue #7060):
-//! hosts call [`run`] or [`run_with`] with ordinary Rust state instead.
+//! hosts call [`run_live`] with a [`DeviceLink`], or [`run_with`] with ordinary
+//! Rust state.
 
 slint::include_modules!();
 
@@ -15,16 +16,31 @@ pub mod ai;
 pub mod bridge;
 pub mod data_surface;
 pub mod data_view;
+pub mod link;
 
 pub use bridge::{Action, AppError, AppState, DeviceLink, Reading, UiOptions};
 use data_surface::DataView;
 use data_view::WorkbenchData;
+pub use link::{connect_watch, ConnectionLink};
 
 /// Build, populate and run the shell with supplied state and options.
 pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
     let window = AppWindow::new()?;
     let state = std::rc::Rc::new(std::cell::RefCell::new(state));
     state.borrow().apply_to(&window, &options);
+
+    let sync_options = options;
+    {
+        let shared = state.clone();
+        let view = window.clone_strong();
+        window.on_sync_now(move || {
+            // shortcut: reads are synchronous and wait on the watch's reply
+            // window; move to a worker + timer if a refresh ever stalls.
+            let mut state = shared.borrow_mut();
+            let _ = state.refresh_reads();
+            state.apply_to(&view, &sync_options);
+        });
+    }
 
     let workbench = Rc::new(RefCell::new(WorkbenchData::default()));
     window.set_wb_endpoint(slint::SharedString::from(workbench.borrow().endpoint()));
@@ -219,6 +235,19 @@ pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
 
     window.run()?;
     Ok(())
+}
+
+/// Run the shell against a live watch connection.
+///
+/// The link's connection state is applied to the status strip, the surfaces
+/// are refreshed from the watch before the first paint, and `run_with` drives
+/// `apply_to` plus all the pane callbacks.
+pub fn run_live(link: impl DeviceLink + 'static, options: UiOptions) -> Result<(), AppError> {
+    let connection = link.connection();
+    let mut state = AppState::with_link(link, bridge::system_now);
+    state.connection = connection;
+    state.refresh_reads()?;
+    run_with(state, options)
 }
 
 /// Run the shell with default state and options.

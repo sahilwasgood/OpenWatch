@@ -1,0 +1,36 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.openwatch'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.openwatch'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    sourceSets {
+        main {
+            // Single source of truth for manifest and cargo-ndk output.
+            manifest.srcFile '../manifest/AndroidManifest.xml'
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    // btleplug's Java/JNI classes are reached only from native code.
+    implementation(name: 'droidplug-release', ext: 'aar')
+}
