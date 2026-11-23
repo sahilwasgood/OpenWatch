@@ -3,12 +3,14 @@
 //! This is the one surface that renders raw hex. Today and Device consume only
 //! decoded readings; nothing here writes back to the device.
 
+use std::collections::HashMap;
+
 use openwatch_core::protocol::frame;
 use openwatch_core::protocol::registry::{self, Confidence};
 use openwatch_core::store::FrameRow;
 use slint::{ModelRc, SharedString, VecModel};
 
-use crate::ai::{payload, AiConfig, AiError};
+use crate::ai::{enabled, payload, AiConfig, AiError};
 use crate::bridge::utc_label;
 use crate::{ActionView, AppWindow, FrameView};
 
@@ -26,6 +28,7 @@ pub struct AdvancedAction {
 
 /// All source/unverified capabilities, tagged S or U.
 pub fn advanced_actions() -> Vec<AdvancedAction> {
+    let mut seen: HashMap<String, usize> = HashMap::new();
     registry::all_opcodes()
         .into_iter()
         .filter(|(_, _, confidence)| {
@@ -33,8 +36,18 @@ pub fn advanced_actions() -> Vec<AdvancedAction> {
         })
         .map(|(cmd, name, confidence)| {
             let source = confidence == Confidence::Source;
+            // The four FEE6 file-channel entries share the 0xF6 sentinel; give
+            // each one a distinct key so request_action cannot alias them.
+            let base = format!("{cmd:02X}");
+            let count = seen.entry(base.clone()).or_insert(0);
+            *count += 1;
+            let key = if *count == 1 {
+                base
+            } else {
+                format!("{base}-{}", *count)
+            };
             AdvancedAction {
-                key: format!("{cmd:02X}"),
+                key,
                 title: name.to_string(),
                 tag: if source { "S" } else { "U" },
                 detail: format!(
@@ -218,6 +231,20 @@ impl WorkbenchData {
         self.status = "Payload ready — nothing sent yet".into();
     }
 
+    /// Repreview the exact body about to be sent, then return the triple the
+    /// host must transmit. `None` means AI is off or no frame is selected.
+    pub fn prepare_explain(&mut self) -> Option<(AiConfig, String, String)> {
+        if !enabled(&self.config()) || self.selected_hex().is_none() {
+            return None;
+        }
+        self.preview();
+        let hex = self.selected_hex().map(str::to_string)?;
+        let config = self.config();
+        let note = self.note().to_string();
+        self.mark_sending();
+        Some((config, hex, note))
+    }
+
     /// Show that one frame is on its way to the configured endpoint.
     pub fn mark_sending(&mut self) {
         self.status = "Sending the selected frame…".into();
@@ -241,17 +268,21 @@ impl WorkbenchData {
     pub fn request_action(&mut self, key: &str) {
         self.pending = self.actions.iter().position(|action| action.key == key);
         if let Some(index) = self.pending {
-            self.status = format!("Confirm {} before running", self.actions[index].title);
+            self.status = format!(
+                "Review {} (preview only) — nothing is sent",
+                self.actions[index].title
+            );
         }
     }
 
-    /// Second, explicit step: record the confirmed action locally.
+    /// Second, explicit step: record the reviewed action locally. No frame is
+    /// built and nothing is written to the watch.
     pub fn confirm_action(&mut self) {
         if let Some(index) = self.pending.take() {
             let action = &self.actions[index];
             self.confirmed
-                .push(format!("[{}] {}", action.tag, action.title));
-            self.status = format!("Confirmed: {}", action.title);
+                .push(format!("[{}] {} (preview only)", action.tag, action.title));
+            self.status = format!("Preview recorded: {} — no write sent", action.title);
         }
     }
 
@@ -383,6 +414,58 @@ mod tests {
             Some(reviewed),
             "the body sent must be exactly the one the user reviewed"
         );
+    }
+
+    #[test]
+    fn editing_the_note_after_preview_sends_what_is_shown() {
+        SENT.with(|sent| *sent.borrow_mut() = None);
+        ai::set_transport(|_, _, body| {
+            SENT.with(|sent| *sent.borrow_mut() = Some(body.to_string()));
+            Ok(r#"{"choices":[{"message":{"content":"ok"}}]}"#.into())
+        });
+        let mut data = WorkbenchData::default();
+        data.set_frames(vec![row(1, "FEEA200553", "live")]);
+        data.select(1);
+        data.set_note("note A".into());
+        data.set_key("sk-local".into());
+        data.preview();
+        assert!(data.preview.contains("note A"));
+
+        // The user edits the note after the first preview, then hits Explain.
+        data.set_note("note B".into());
+        let (config, hex, note) = data.prepare_explain().unwrap();
+        assert_eq!(data.preview, payload(&hex, &note));
+        assert!(data.preview.contains("note B"));
+        assert!(!data.preview.contains("note A"));
+
+        ai::explain_blocking_with_note(&config, &hex, &note).unwrap();
+        assert_eq!(
+            SENT.with(|sent| sent.borrow().clone()),
+            Some(data.preview),
+            "the body sent must be the body the preview shows after the edit"
+        );
+    }
+
+    #[test]
+    fn advanced_action_keys_are_unique() {
+        let actions = advanced_actions();
+        let mut keys: Vec<&str> = actions.iter().map(|action| action.key.as_str()).collect();
+        keys.sort_unstable();
+        let before = keys.len();
+        keys.dedup();
+        assert_eq!(keys.len(), before, "duplicate action keys alias each other");
+        let mut data = WorkbenchData::default();
+        for action in &actions {
+            data.request_action(&action.key);
+            assert_eq!(
+                data.pending,
+                data.actions
+                    .iter()
+                    .position(|candidate| candidate.key == action.key),
+                "key {} did not resolve to its own action",
+                action.key
+            );
+        }
     }
 
     #[test]

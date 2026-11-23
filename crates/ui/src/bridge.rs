@@ -13,7 +13,8 @@ use openwatch_core::ble::BleError;
 use openwatch_core::connection::ConnectionState;
 use openwatch_core::protocol::command;
 use openwatch_core::protocol::decode::{decode, decode_message_apps, Value};
-use openwatch_core::protocol::frame::Frame;
+use openwatch_core::protocol::frame::{packet, Frame};
+use openwatch_core::protocol::registry;
 use openwatch_core::store::{FrameRow, Store};
 use slint::{ModelRc, SharedString, VecModel};
 use thiserror::Error;
@@ -249,9 +250,9 @@ fn parse_goals(bytes: &[u8]) -> Vec<(u8, u32)> {
 /// ~13 queries; the write path still enforces the protocol's 350 ms spacing.
 pub const REFRESH_WAIT_MS: u64 = 150;
 
-fn read(link: &dyn DeviceLink, cmd: u8, payload: &[u8]) -> Option<Value> {
-    let frame = link.query(cmd, payload, REFRESH_WAIT_MS).ok()?;
-    decode(frame.cmd, &frame.payload)
+/// Uppercase hex of the exact bytes put on (or received from) the wire.
+fn hex_of(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
 
 impl AppState {
@@ -267,6 +268,21 @@ impl AppState {
     pub fn with_store(mut self, store: Store) -> Self {
         self.store = Some(store);
         self
+    }
+
+    /// True when a local store is attached. Production hosts build their state
+    /// through `run_live`, which must always attach one.
+    #[cfg(test)]
+    pub(crate) fn has_store(&self) -> bool {
+        self.store.is_some()
+    }
+
+    /// Refresh the status strip from the link; reconnects are not static.
+    pub(crate) fn sync_connection(&mut self) {
+        let current = self.link.as_ref().map(|link| link.connection());
+        if let Some(current) = current {
+            self.connection = current;
+        }
     }
 
     /// Most-recent frames for the Workbench raw inspector. No store configured
@@ -363,6 +379,17 @@ impl AppState {
         let stamp = utc_label(at);
         let mut cards = Vec::new();
         let mut device_values = Vec::new();
+        // (direction, exact frame hex, cmd) for the raw store. The cmd drives
+        // the evidence tag; the Workbench decodes cmd/opcode from the hex.
+        let mut frames: Vec<(&'static str, String, u8)> = Vec::new();
+        // Log both directions at the link boundary: the request is sent even
+        // when the reply times out, so it is queued before the query.
+        let mut read = |link: &dyn DeviceLink, cmd: u8, payload: &[u8]| -> Option<Value> {
+            frames.push(("tx", hex_of(&packet(cmd, payload)), cmd));
+            let frame = link.query(cmd, payload, REFRESH_WAIT_MS).ok()?;
+            frames.push(("rx", hex_of(&packet(frame.cmd, &frame.payload)), frame.cmd));
+            decode(frame.cmd, &frame.payload)
+        };
 
         let battery = link.battery();
         if let Some(value) = battery {
@@ -560,9 +587,12 @@ impl AppState {
             }
         }
 
-        for value in cards.iter().chain(device_values.iter()) {
-            if let Some(store) = self.store.as_mut() {
+        if let Some(store) = self.store.as_mut() {
+            for value in cards.iter().chain(device_values.iter()) {
                 store.put_reading(value.key, &value.value, at)?;
+            }
+            for (direction, hex, cmd) in &frames {
+                store.put_frame(direction, hex, at, registry::confidence(*cmd))?;
             }
         }
         if let Some(value) = battery {
@@ -631,6 +661,10 @@ impl AppState {
         let at = (self.now)();
         let stamp = utc_label(at);
         self.last_sync = Some(stamp.clone());
+        if let Some(store) = self.store.as_mut() {
+            let cmd = frame.get(4).copied().unwrap_or(0);
+            store.put_frame("tx", &hex_of(&frame), at, registry::confidence(cmd))?;
+        }
         if let Some((key, value)) = updated {
             for reading in self.cards.iter_mut().chain(self.device_values.iter_mut()) {
                 if reading.key == key {
@@ -802,6 +836,10 @@ mod tests {
         fn battery(&self) -> Option<u8> {
             Some(self.battery)
         }
+
+        fn connection(&self) -> ConnectionState {
+            ConnectionState::Connected
+        }
     }
 
     #[test]
@@ -834,6 +872,50 @@ mod tests {
                 card.key
             );
         }
+    }
+
+    #[test]
+    fn refresh_logs_exact_frames_for_both_directions() {
+        let store = Store::open(":memory:").unwrap();
+        let link = MockLink {
+            replies: live_fixtures(),
+            writes: Rc::new(RefCell::new(Vec::new())),
+            battery: 18,
+        };
+        let mut state = AppState::with_link(link, fixed_now).with_store(store);
+        state.refresh_reads().unwrap();
+
+        let frames = state.stored_frames(500).unwrap();
+        assert!(!frames.is_empty(), "no frames were logged");
+        assert!(frames.iter().any(|row| row.direction == "tx"));
+        assert!(frames.iter().any(|row| row.direction == "rx"));
+        for row in &frames {
+            assert_eq!(row.at_unix, fixed_now());
+            assert!(matches!(
+                row.confidence.as_str(),
+                "live" | "source" | "unverified"
+            ));
+            let (cmd, opcode) = crate::data_view::opcode_for(&row.frame_hex);
+            assert_ne!(cmd, "—", "inspector cannot read {}", row.frame_hex);
+            assert_ne!(
+                opcode, "unparsed",
+                "inspector cannot read {}",
+                row.frame_hex
+            );
+        }
+    }
+
+    #[test]
+    fn sync_connection_refreshes_the_status_strip() {
+        let link = MockLink {
+            replies: vec![],
+            writes: Rc::new(RefCell::new(Vec::new())),
+            battery: 18,
+        };
+        let mut state = AppState::with_link(link, fixed_now);
+        assert_eq!(state.connection, ConnectionState::Idle);
+        state.sync_connection();
+        assert_eq!(state.connection, ConnectionState::Connected);
     }
 
     #[test]

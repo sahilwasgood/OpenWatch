@@ -11,6 +11,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
+use openwatch_core::store::Store;
 use slint::ComponentHandle;
 
 pub mod ai;
@@ -40,12 +41,21 @@ fn run_with_opts(
     let state = Rc::new(RefCell::new(state));
     state.borrow().apply_to(&window, &options);
 
+    let workbench = Rc::new(RefCell::new(WorkbenchData::default()));
+    window.set_wb_endpoint(slint::SharedString::from(workbench.borrow().endpoint()));
+    {
+        let mut wb = workbench.borrow_mut();
+        wb.set_frames(state.borrow().stored_frames(200).unwrap_or_default());
+        wb.apply_to(&window);
+    }
+
     let sync_options = options;
     let sync_in_flight = Rc::new(Cell::new(false));
     let schedule_refresh: Rc<dyn Fn()> = Rc::new({
         let shared = state.clone();
         let view = window.clone_strong();
         let in_flight = sync_in_flight.clone();
+        let wb = workbench.clone();
         move || {
             if in_flight.get() {
                 return;
@@ -55,12 +65,25 @@ fn run_with_opts(
             let shared = shared.clone();
             let view = view.clone_strong();
             let flag = in_flight.clone();
+            let wb = wb.clone();
             // The one-shot timer fires after this handler returns, so the
             // disabled/"Syncing…" state gets painted before the blocking read.
+            // shortcut: refresh still runs on Slint's UI thread (~7 s) because
+            // the window handle is !Send and AppState owns a !Send DeviceLink;
+            // this is deferral, not a non-blocking refresh. Upgrade when the
+            // link is Send + Sync and results can be marshalled by a timer.
             slint::Timer::single_shot(Duration::ZERO, move || {
-                let mut state = shared.borrow_mut();
-                let _ = state.refresh_reads();
-                state.apply_to(&view, &sync_options);
+                {
+                    let mut state = shared.borrow_mut();
+                    let _ = state.refresh_reads();
+                    state.sync_connection();
+                    state.apply_to(&view, &sync_options);
+                }
+                // The refresh logged new frames to the store: reload the raw
+                // inspector so it reads what was actually sent and received.
+                let frames = shared.borrow().stored_frames(200).unwrap_or_default();
+                wb.borrow_mut().set_frames(frames);
+                wb.borrow().apply_to(&view);
                 view.set_syncing(false);
                 flag.set(false);
             });
@@ -70,14 +93,6 @@ fn run_with_opts(
         let schedule = schedule_refresh.clone();
         move || schedule()
     });
-
-    let workbench = Rc::new(RefCell::new(WorkbenchData::default()));
-    window.set_wb_endpoint(slint::SharedString::from(workbench.borrow().endpoint()));
-    {
-        let mut wb = workbench.borrow_mut();
-        wb.set_frames(state.borrow().stored_frames(200).unwrap_or_default());
-        wb.apply_to(&window);
-    }
 
     let data = Rc::new(RefCell::new(DataView::default()));
     {
@@ -131,26 +146,27 @@ fn run_with_opts(
         let shared = workbench.clone();
         let view = window.clone_strong();
         window.on_explain_frame(move || {
-            let (config, hex, note) = {
+            let prepared = {
                 let mut wb = shared.borrow_mut();
                 wb.set_note(view.get_wb_note().to_string());
                 wb.set_endpoint(view.get_wb_endpoint().to_string());
                 wb.set_key(view.get_wb_key().to_string());
                 // No key means off: no transport is constructed or called.
-                if !ai::enabled(&wb.config()) {
-                    wb.set_explanation(Err(ai::AiError::Disabled));
-                    wb.apply_to(&view);
-                    return;
+                let prepared = wb.prepare_explain();
+                if prepared.is_none() {
+                    if !ai::enabled(&wb.config()) {
+                        wb.set_explanation(Err(ai::AiError::Disabled));
+                    } else {
+                        wb.set_explanation(Err(ai::AiError::Response(
+                            "select a frame first".into(),
+                        )));
+                    }
                 }
-                let Some(hex) = wb.selected_hex().map(str::to_string) else {
-                    wb.set_explanation(Err(ai::AiError::Response("select a frame first".into())));
-                    wb.apply_to(&view);
-                    return;
-                };
-                let config = wb.config();
-                wb.mark_sending();
                 wb.apply_to(&view);
-                (config, hex, wb.note().to_string())
+                prepared
+            };
+            let Some((config, hex, note)) = prepared else {
+                return;
             };
             // shortcut: synchronous POST keeps the generated window handle off
             // other threads (it is !Send); move to a channel + timer if a call
@@ -270,16 +286,26 @@ fn run_with_opts(
     Ok(())
 }
 
-/// Run the shell against a live watch connection.
+/// Build host state with the local store attached. One path for every host, so
+/// the Data surface and the raw inspector always have persistence behind them.
+fn live_state(link: impl DeviceLink + 'static, store: Store, now: fn() -> i64) -> AppState {
+    let connection = link.connection();
+    let mut state = AppState::with_link(link, now).with_store(store);
+    state.connection = connection;
+    state
+}
+
+/// Run the shell against a live watch connection and a local SQLite store.
 ///
 /// The link's connection state is applied to the status strip; the first read
 /// and every later "Sync now" use the same deferred, guarded refresh path, so
 /// neither blocks before the first paint nor stacks overlapping refreshes.
-pub fn run_live(link: impl DeviceLink + 'static, options: UiOptions) -> Result<(), AppError> {
-    let connection = link.connection();
-    let mut state = AppState::with_link(link, bridge::system_now);
-    state.connection = connection;
-    run_with_opts(state, options, true)
+pub fn run_live(
+    link: impl DeviceLink + 'static,
+    store: Store,
+    options: UiOptions,
+) -> Result<(), AppError> {
+    run_with_opts(live_state(link, store, bridge::system_now), options, true)
 }
 
 /// Run the shell with default state and options.
@@ -291,6 +317,68 @@ pub fn run() -> Result<(), AppError> {
 mod tests {
     use super::*;
     use slint::Model;
+
+    #[derive(Debug)]
+    struct OfflineLink;
+
+    impl DeviceLink for OfflineLink {
+        fn query(
+            &self,
+            _cmd: u8,
+            _payload: &[u8],
+            _wait_ms: u64,
+        ) -> Result<openwatch_core::protocol::frame::Frame, AppError> {
+            Err(AppError::NoLink)
+        }
+        fn write(&self, _frame: &[u8]) -> Result<(), AppError> {
+            Err(AppError::NoLink)
+        }
+        fn battery(&self) -> Option<u8> {
+            None
+        }
+    }
+
+    #[test]
+    fn live_state_always_carries_the_host_store() {
+        let state = live_state(
+            OfflineLink,
+            Store::open(":memory:").unwrap(),
+            bridge::system_now,
+        );
+        assert!(state.has_store(), "a host must never run store-less");
+    }
+
+    #[test]
+    fn active_tab_label_contrast_meets_design_spec() {
+        let window = include_str!("../ui/app-window.slint");
+        assert!(
+            window.contains("root.active-tab == i ? Theme.zinc-950 : Theme.text-primary"),
+            "active tab must use the near-black label on the accent fill"
+        );
+        let theme = include_str!("../ui/theme.slint");
+        assert!(theme.contains("accent: #0a84ff"));
+        assert!(theme.contains("zinc-950: #09090b"));
+        // WCAG 2.1 relative luminance and contrast ratio.
+        fn luminance(hex: &str) -> f64 {
+            let channel = |at: usize| {
+                let value =
+                    u8::from_str_radix(&hex[1 + at * 2..3 + at * 2], 16).unwrap() as f64 / 255.0;
+                if value <= 0.03928 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2)
+        }
+        let accent = luminance("#0a84ff");
+        let label = luminance("#09090b");
+        let ratio = (accent + 0.05) / (label + 0.05);
+        assert!(
+            ratio >= 4.5,
+            "active tab contrast is {ratio:.2}:1, design §6 requires ≥4.5:1"
+        );
+    }
 
     #[test]
     fn ui_exposes_four_navigation_destinations() {
@@ -392,7 +480,8 @@ mod tests {
             "Source frame:",
             "Exact payload (review before send)",
             "S source / U unverified",
-            "Confirm",
+            "Mark reviewed",
+            "preview only",
             "key-edited",
         ] {
             assert!(workbench.contains(token), "workbench lost {token}");

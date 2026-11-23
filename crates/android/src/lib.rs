@@ -9,14 +9,17 @@
 //! adapter; the native result callback gates adapter creation.
 
 use openwatch_core::ble::device_key::DeviceKey;
+use openwatch_core::store::Store;
 use openwatch_ui::{connect_watch, run_live, AppError, UiOptions};
 
 /// Initialise the watch connection and run the UI.
 ///
-/// On Android, permissions and JNI must be initialised first (see
-/// `android_main`), before any BLE manager is created.
-pub fn launch(key: DeviceKey) -> Result<(), AppError> {
-    run_live(connect_watch(key)?, UiOptions::default())
+/// `db_path` must be a context-writable path (the activity's files dir); the
+/// local store lives there. On Android, permissions and JNI must be initialised
+/// first (see `android_main`), before any BLE manager is created.
+pub fn launch(key: DeviceKey, db_path: &str) -> Result<(), AppError> {
+    let store = Store::open(db_path)?;
+    run_live(connect_watch(key)?, store, UiOptions::default())
 }
 
 #[cfg(target_os = "android")]
@@ -24,7 +27,7 @@ mod android {
     use std::ffi::c_void;
     use std::sync::{mpsc, Mutex};
 
-    use jni::objects::{JClass, JObject, JValue};
+    use jni::objects::{JClass, JObject, JString, JValue};
     use jni::sys::jboolean;
     use jni::{jni_sig, jni_str, EnvUnowned, JavaVM, NativeMethod};
     use openwatch_core::ble::device_key::{DeviceKey, WATCH_ADVERTISED_NAME};
@@ -97,6 +100,35 @@ mod android {
         })
     }
 
+    /// The activity's files dir, guaranteed writable for this app. Used for
+    /// the local SQLite store so no data leaves the device by default.
+    fn app_files_dir(
+        vm: &JavaVM,
+        activity_raw: jni::sys::jobject,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        vm.attach_current_thread(|env| {
+            let activity = unsafe { JObject::from_raw(env, activity_raw) };
+            let file = env
+                .call_method(
+                    &activity,
+                    jni_str!("getFilesDir"),
+                    jni_sig!("()Ljava/io/File;"),
+                    &[],
+                )?
+                .l()?;
+            let path = env
+                .call_method(
+                    &file,
+                    jni_str!("getAbsolutePath"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )?
+                .l()?;
+            let path: JString = env.cast_local(path)?;
+            Ok(path.try_to_string(env)?)
+        })
+    }
+
     #[unsafe(no_mangle)]
     pub fn android_main(app: AndroidApp) {
         let (tx, rx) = mpsc::channel();
@@ -124,8 +156,15 @@ mod android {
             return;
         }
 
+        let db = match app_files_dir(&vm, activity_raw) {
+            Ok(dir) => format!("{}/openwatch.sqlite3", dir.trim_end_matches('/')),
+            Err(error) => {
+                log::error!("could not locate a writable store path: {error}");
+                return;
+            }
+        };
         let key = DeviceKey::AdvertisedName(WATCH_ADVERTISED_NAME.to_string());
-        if let Err(error) = super::launch(key) {
+        if let Err(error) = super::launch(key, &db) {
             log::error!("OpenWatch stopped: {error}");
         }
     }

@@ -115,7 +115,7 @@ component ActionRow inherits Rectangle {
         border-color: Theme.card-edge;
         Text {
             width: 100%; height: 100%;
-            text: "Run";
+            text: "Review";
             color: Theme.text-primary;
             font-size: Theme.font-micro;
             horizontal-alignment: center;
@@ -240,7 +240,7 @@ export component WorkbenchSurface inherits Rectangle {
         border-radius: Theme.radius-sm;
         Text {
             x: Theme.space-3; y: 8px;
-            text: "Advanced actions · S source / U unverified";
+            text: "Advanced actions · S source / U unverified · preview only";
             color: Theme.text-primary;
             font-size: Theme.font-caption;
         }
@@ -261,7 +261,7 @@ export component WorkbenchSurface inherits Rectangle {
         }
         Text {
             x: Theme.space-3; y: 222px; width: parent.width - Theme.space-6;
-            text: root.pending != "" ? "Confirm \{root.pending}?" : "No action pending";
+            text: root.pending != "" ? "Review \{root.pending} (preview only)?" : "No action pending";
             color: root.pending != "" ? Theme.status-warn : Theme.text-secondary;
             font-size: Theme.font-micro;
             wrap: word-wrap;
@@ -274,7 +274,7 @@ export component WorkbenchSurface inherits Rectangle {
             border-width: 1px;
             border-color: Theme.card-edge;
             Text {
-                width: 100%; height: 100%; text: "Confirm";
+                width: 100%; height: 100%; text: "Mark reviewed";
                 color: Theme.text-primary; font-size: Theme.font-micro;
                 horizontal-alignment: center; vertical-alignment: center;
             }
@@ -293,6 +293,11 @@ export component WorkbenchSurface inherits Rectangle {
                 horizontal-alignment: center; vertical-alignment: center;
             }
             cancel-touch := TouchArea { clicked => { root.cancel-action(); } }
+        }
+        Text {
+            x: Theme.space-3; y: 280px; width: parent.width - Theme.space-6;
+            text: "Preview only — no frame is written to the watch.";
+            color: Theme.text-secondary; font-size: Theme.font-micro;
         }
     }
 

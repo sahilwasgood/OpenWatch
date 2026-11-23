@@ -345,7 +345,9 @@ export component AppWindow inherits Window {
                 x: Theme.space-3;
                 y: (parent.height - self.height) / 2;
                 text: destination;
-                color: Theme.text-primary;
+                // Near-black on the #0a84ff accent fill is 5.46:1 (design §6
+                // requires ≥4.5:1); white text there was only ~3.3:1.
+                color: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
                 font-size: Theme.font-body;
             }
             TouchArea {
