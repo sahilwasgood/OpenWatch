@@ -574,6 +574,89 @@ mod tests {
     }
 
     #[test]
+    fn icons_are_colorized_svg_and_sources_have_no_emoji() {
+        let mut all = String::new();
+        for name in [
+            "theme.slint",
+            "app-window.slint",
+            "today.slint",
+            "device.slint",
+            "workbench.slint",
+            "data.slint",
+        ] {
+            let src = source(name);
+            all.push_str(src);
+            for ch in src.chars() {
+                let cp = ch as u32;
+                assert!(
+                    !(0x1F000..=0x1FAFF).contains(&cp)
+                        && !(0x2600..=0x27BF).contains(&cp)
+                        && cp != 0xFE0F,
+                    "{name} still contains an emoji glyph: {ch:?}"
+                );
+            }
+        }
+
+        let icon_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/icons");
+        for icon in [
+            "home",
+            "device",
+            "workbench",
+            "data",
+            "sync",
+            "download",
+            "trash",
+            "confirm",
+        ] {
+            let asset = format!("{icon_dir}/{icon}.svg");
+            assert!(
+                std::path::Path::new(&asset).exists(),
+                "missing icon asset {asset}"
+            );
+            assert!(
+                all.contains(&format!("@image-url(\"../icons/{icon}.svg\")")),
+                "{icon}.svg is not wired through @image-url"
+            );
+        }
+        assert!(
+            all.contains("colorize:"),
+            "SVG icons must be recolored from theme tokens via colorize"
+        );
+    }
+
+    #[test]
+    fn motion_tokens_cover_hover_press_state_and_panel() {
+        let theme = source("theme.slint");
+        for (token, ms) in [
+            ("motion-hover", "120ms"),
+            ("motion-press", "90ms"),
+            ("motion-state", "180ms"),
+            ("motion-panel", "220ms"),
+            ("motion-modal", "240ms"),
+        ] {
+            assert!(
+                theme.contains(&format!("{token}: {ms};")),
+                "theme lost {token} at {ms}"
+            );
+        }
+        assert!(
+            theme.contains("reduced-motion-crossfade"),
+            "reduced-motion cross-fade must stay platform-driven"
+        );
+        // One easing family across every animated surface.
+        for name in ["app-window.slint", "workbench.slint", "data.slint"] {
+            for line in source(name).lines() {
+                if line.contains("easing:") {
+                    assert!(
+                        line.contains("cubic-bezier(0.2, 0, 0, 1)"),
+                        "{name} uses a foreign easing: {line}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn shell_applies_content_and_status_tokens() {
         let shell = include_str!("../ui/app-window.slint");
         for token in [

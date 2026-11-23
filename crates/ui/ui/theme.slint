@@ -46,9 +46,13 @@ export global Theme {
     out property <length> space-6: 24px;
     out property <length> space-8: 32px;
 
-    // Motion: 250 ms state changes, 120 ms press.
-    out property <duration> motion-standard: 250ms;
-    out property <duration> motion-press: 120ms;
+    // Motion: one easing family, cubic-bezier(.2,0,0,1), used by every animated
+    // surface. Exits are faster than enters; geometry never animates.
+    out property <duration> motion-hover: 120ms;
+    out property <duration> motion-press: 90ms;
+    out property <duration> motion-state: 180ms;
+    out property <duration> motion-panel: 220ms;
+    out property <duration> motion-modal: 240ms;
 
     // Type scale (px): display 24/650/32, H1 18/600/24, H2 15/600/20,
     // body 13/400/20, label 12/500/16, micro 11/500/14. Interactive labels
@@ -64,7 +68,8 @@ export global Theme {
     // Accessibility fallbacks.
     // reduced-transparency: every glass surface falls back to this solid token.
     out property <color> solid-surface: #18181b;
-    // reduced-motion: short cross-fade instead of the full 250 ms transition.
+    // reduced-motion is platform-driven: a short cross-fade replaces the full
+    // panel transition when the host requests reduced motion.
     out property <duration> reduced-motion-crossfade: 80ms;
     // high-contrast / forced-colors: visible border token.
     out property <color> high-contrast-border: #f4f4f5;
@@ -102,4 +107,36 @@ export component GlassCard inherits Rectangle {
         border-color: root.high-contrast ? Theme.high-contrast-border : Theme.card-edge;
         backdrop-blur: Theme.glass-blur;
     }
+}
+
+// One SVG family, recolored from theme tokens. `colorize` turns each SVG into
+// an alpha mask, so the same shapes read correctly on accent and neutral fills.
+component IconBase inherits Image {
+    in property <color> tint: Theme.text-primary;
+    image-fit: contain;
+    colorize: root.tint;
+}
+
+export component NavIcon inherits IconBase {
+    in property <int> index: 0;
+    source: root.index == 0 ? @image-url("../icons/home.svg") :
+            root.index == 1 ? @image-url("../icons/device.svg") :
+            root.index == 2 ? @image-url("../icons/workbench.svg") :
+            @image-url("../icons/data.svg");
+}
+
+export component SyncIcon inherits IconBase {
+    source: @image-url("../icons/sync.svg");
+}
+
+export component DownloadIcon inherits IconBase {
+    source: @image-url("../icons/download.svg");
+}
+
+export component TrashIcon inherits IconBase {
+    source: @image-url("../icons/trash.svg");
+}
+
+export component ConfirmIcon inherits IconBase {
+    source: @image-url("../icons/confirm.svg");
 }

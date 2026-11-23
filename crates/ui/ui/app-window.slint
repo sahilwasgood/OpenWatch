@@ -1,5 +1,5 @@
 // OpenWatch desktop/Android shell: four destinations, no nested maze.
-import { Theme, GlassCard, Navigation } from "theme.slint";
+import { Theme, GlassCard, Navigation, NavIcon, SyncIcon, ConfirmIcon } from "theme.slint";
 import { TodaySurface, CardView } from "today.slint";
 import { DeviceSurface, RowView } from "device.slint";
 import { WorkbenchSurface, FrameView, ActionView } from "workbench.slint";
@@ -41,9 +41,21 @@ component BottomNav inherits Rectangle {
         accessible-label: "Open " + destination;
         background: root.active-tab == i ? Theme.accent : transparent;
         border-radius: Theme.radius-sm;
+        animate background {
+            duration: Theme.motion-hover;
+            easing: cubic-bezier(0.2, 0, 0, 1);
+        }
+        NavIcon {
+            x: (parent.width - 16px) / 2;
+            y: 3px;
+            width: 16px;
+            height: 16px;
+            index: i;
+            tint: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
+        }
         Text {
             x: Theme.space-2;
-            y: (parent.height - self.height) / 2;
+            y: 23px;
             width: parent.width - Theme.space-4;
             text: destination;
             color: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
@@ -92,7 +104,7 @@ component TodayPane inherits Rectangle {
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
@@ -125,7 +137,7 @@ component DevicePane inherits Rectangle {
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
@@ -204,7 +216,7 @@ component WorkbenchPane inherits Rectangle {
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
@@ -277,7 +289,7 @@ component DataPane inherits Rectangle {
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
@@ -434,11 +446,23 @@ export component AppWindow inherits Window {
             background: root.active-tab == i ? Theme.accent : transparent;
             border-radius: Theme.radius-sm;
             animate background {
-                duration: Theme.motion-standard;
-                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+                duration: Theme.motion-state;
+                easing: cubic-bezier(0.2, 0, 0, 1);
+            }
+            NavIcon {
+                x: Theme.space-3;
+                y: (parent.height - 20px) / 2;
+                width: 20px;
+                height: 20px;
+                index: i;
+                tint: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
+                animate tint {
+                    duration: Theme.motion-hover;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
             }
             Text {
-                x: Theme.space-3;
+                x: Theme.space-3 + 30px;
                 y: (parent.height - self.height) / 2;
                 text: destination;
                 // Near-black on the #0a84ff accent fill is 5.46:1 (design §6
@@ -503,8 +527,8 @@ export component AppWindow inherits Window {
                 border-radius: 4px;
                 background: root.status-color;
                 animate background {
-                    duration: Theme.motion-standard;
-                    easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+                    duration: Theme.motion-state;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
                 }
             }
             Text {
@@ -547,10 +571,18 @@ export component AppWindow inherits Window {
                 accessible-label: "Sync now";
                 animate background {
                     duration: Theme.motion-press;
-                    easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                SyncIcon {
+                    x: 8px;
+                    y: (parent.height - 16px) / 2;
+                    width: 16px;
+                    height: 16px;
+                    tint: root.syncing ? Theme.text-secondary : (sync-touch.pressed ? Theme.zinc-950 : Theme.text-primary);
                 }
                 Text {
-                    width: 100%;
+                    x: 24px;
+                    width: parent.width - 24px;
                     height: 100%;
                     text: root.syncing ? "Syncing…" : "Sync now";
                     color: root.syncing ? Theme.text-secondary : (sync-touch.pressed ? Theme.zinc-950 : Theme.text-primary);
@@ -639,8 +671,20 @@ export component AppWindow inherits Window {
                 border-color: Theme.card-edge;
                 accessible-role: button;
                 accessible-label: "Sync now";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                SyncIcon {
+                    x: 8px;
+                    y: (parent.height - 16px) / 2;
+                    width: 16px;
+                    height: 16px;
+                    tint: root.syncing ? Theme.text-secondary : (narrow-sync.pressed ? Theme.zinc-950 : Theme.text-primary);
+                }
                 Text {
-                    width: 100%;
+                    x: 24px;
+                    width: parent.width - 24px;
                     height: 100%;
                     text: root.syncing ? "Syncing…" : "Sync now";
                     color: root.syncing ? Theme.text-secondary : (narrow-sync.pressed ? Theme.zinc-950 : Theme.text-primary);
@@ -749,12 +793,20 @@ export component AppWindow inherits Window {
 
     // Modal confirmation. The dim layer absorbs clicks outside the panel so a
     // stale control cannot be armed twice; Cancel arms nothing and writes nothing.
-    if root.control-sheet-open: Rectangle {
+    modal := Rectangle {
         x: 0;
         y: 0;
         width: 100%;
         height: 100%;
         background: #000000aa;
+        // Modal transition: a fade in/out instead of a hard cut. Visibility
+        // follows opacity so the sheet stops taking clicks once it is gone.
+        opacity: root.control-sheet-open ? 1 : 0;
+        visible: self.opacity > 0;
+        animate opacity {
+            duration: Theme.motion-modal;
+            easing: cubic-bezier(0.2, 0, 0, 1);
+        }
         TouchArea {
             clicked => { root.close-control-sheet(); }
         }
@@ -767,6 +819,11 @@ export component AppWindow inherits Window {
             border-radius: Theme.radius-lg;
             border-width: 1px;
             border-color: Theme.card-edge;
+            opacity: modal.opacity;
+            animate opacity {
+                duration: Theme.motion-panel;
+                easing: cubic-bezier(0.2, 0, 0, 1);
+            }
             Text {
                 x: Theme.space-6;
                 y: Theme.space-6;
@@ -816,8 +873,16 @@ export component AppWindow inherits Window {
                 border-radius: Theme.radius-sm;
                 accessible-role: button;
                 accessible-label: "Confirm control";
+                ConfirmIcon {
+                    x: Theme.space-3;
+                    y: (parent.height - 16px) / 2;
+                    width: 16px;
+                    height: 16px;
+                    tint: Theme.zinc-950;
+                }
                 Text {
-                    width: 100%;
+                    x: 28px;
+                    width: parent.width - 28px;
                     height: 100%;
                     text: "Confirm";
                     color: Theme.zinc-950;

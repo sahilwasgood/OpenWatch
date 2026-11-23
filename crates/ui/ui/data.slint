@@ -1,7 +1,7 @@
 // Data: history charts, JSON/CSV export, local delete with confirmation and a
 // display-units setting. Everything here reads the local store; no raw frame is
 // rendered and no unverified action is offered on this surface.
-import { Theme } from "theme.slint";
+import { Theme, DownloadIcon, TrashIcon } from "theme.slint";
 
 export component DataSurface inherits Rectangle {
     in property <bool> narrow: false;
@@ -69,6 +69,10 @@ export component DataSurface inherits Rectangle {
                     border-color: Theme.card-edge;
                     accessible-role: button;
                     accessible-label: "Select series " + key;
+                    animate background {
+                        duration: Theme.motion-state;
+                        easing: cubic-bezier(0.2, 0, 0, 1);
+                    }
                     Text {
                         width: 100%; height: 100%;
                         text: key;
@@ -173,8 +177,17 @@ export component DataSurface inherits Rectangle {
                 border-color: Theme.card-edge;
                 accessible-role: button;
                 accessible-label: "Export JSON";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                DownloadIcon {
+                    x: 6px; y: (parent.height - 16px) / 2;
+                    width: 16px; height: 16px;
+                    tint: json-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                }
                 Text {
-                    width: 100%; height: 100%; text: "Export JSON";
+                    x: 24px; width: parent.width - 24px; height: 100%; text: "Export JSON";
                     color: json-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
                     font-size: Theme.font-label;
                     horizontal-alignment: center; vertical-alignment: center;
@@ -189,8 +202,17 @@ export component DataSurface inherits Rectangle {
                 border-color: Theme.card-edge;
                 accessible-role: button;
                 accessible-label: "Export CSV";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                DownloadIcon {
+                    x: 6px; y: (parent.height - 16px) / 2;
+                    width: 16px; height: 16px;
+                    tint: csv-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                }
                 Text {
-                    width: 100%; height: 100%; text: "Export CSV";
+                    x: 24px; width: parent.width - 24px; height: 100%; text: "Export CSV";
                     color: csv-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
                     font-size: Theme.font-label;
                     horizontal-alignment: center; vertical-alignment: center;
@@ -299,8 +321,17 @@ export component DataSurface inherits Rectangle {
                 border-color: Theme.card-edge;
                 accessible-role: button;
                 accessible-label: "Delete all local data";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                TrashIcon {
+                    x: Theme.space-2; y: (parent.height - 16px) / 2;
+                    width: 16px; height: 16px;
+                    tint: delete-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                }
                 Text {
-                    width: 100%; height: 100%; text: "Delete all local data";
+                    x: 28px; width: parent.width - 28px; height: 100%; text: "Delete all local data";
                     color: delete-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
                     font-size: Theme.font-label;
                     horizontal-alignment: center; vertical-alignment: center;
@@ -321,6 +352,10 @@ export component DataSurface inherits Rectangle {
                 accessible-checkable: true;
                 accessible-checked: root.reduced-transparency;
                 accessible-label: "Reduced transparency";
+                animate background {
+                    duration: Theme.motion-state;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
                 Text {
                     width: 100%; height: 100%;
                     text: "Reduced transparency: \{root.reduced-transparency ? "On" : "Off"}";
@@ -341,6 +376,10 @@ export component DataSurface inherits Rectangle {
                 accessible-checkable: true;
                 accessible-checked: root.high-contrast;
                 accessible-label: "High contrast";
+                animate background {
+                    duration: Theme.motion-state;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
                 Text {
                     width: 100%; height: 100%;
                     text: "High contrast: \{root.high-contrast ? "On" : "Off"}";
