@@ -153,6 +153,9 @@ fn run_with_opts(
             let _ = app.confirm_control_action();
             app.apply_cards(&view);
             app.apply_control_sheet(&view);
+            // confirm_control_action records a failed write; publish it so the
+            // strip shows the error instead of silently keeping the old value.
+            app.apply_sync(&view);
         });
     }
 
@@ -815,6 +818,43 @@ mod tests {
     }
 
     #[test]
+    fn failed_control_write_sets_a_visible_failure_state() {
+        // OfflineLink's write() errors, standing in for a dropped link. The
+        // Confirm failure must reach the strip rather than silently vanish.
+        let mut state = AppState::with_link(OfflineLink, bridge::system_now);
+        state.cards.push(Reading {
+            key: "goals-steps",
+            group: "Today",
+            title: "Step goal",
+            value: "8000".into(),
+            detail: "Daily goal stored on the watch",
+            updated_at: "2026-11-22 14:03 UTC".into(),
+        });
+        assert!(state.open_control_sheet(0));
+        assert!(state.control_sheet_open());
+        assert!(state.confirm_control_action().is_err());
+        assert!(
+            !state.control_sheet_open(),
+            "the sheet must still close when the write fails"
+        );
+        assert!(state.failed, "a failed write must set the failed flag");
+        assert!(
+            state
+                .last_error
+                .as_deref()
+                .is_some_and(|error| !error.is_empty()),
+            "a failed write must keep a last-error string for the strip"
+        );
+        assert_eq!(state.sync_phase().label(), "Sync failed — retry");
+        let shell = source("app-window.slint");
+        assert!(shell.contains("root.last-error"), "strip lost last-error");
+        assert!(
+            shell.contains("Theme.status-bad"),
+            "failure is not styled red"
+        );
+    }
+
+    #[test]
     fn only_l_verified_cards_advertise_a_control() {
         assert!(AppState::card_writable("goals-steps"));
         assert!(AppState::card_writable("heart-rate"));
@@ -1006,6 +1046,47 @@ mod tests {
             region.contains("Theme.focus-ring"),
             "reorder controls need a visible focus ring"
         );
+    }
+
+    #[test]
+    fn reorder_targets_clear_the_control_and_stay_in_the_card() {
+        let today = source("today.slint");
+        let control = today
+            .split("if card.writable: Rectangle {")
+            .nth(1)
+            .expect("Today lost the Control affordance")
+            .split("control-touch :=")
+            .next()
+            .unwrap();
+        assert!(control.contains("y: Theme.space-3;"), "Control moved");
+        assert!(control.contains("height: 40px;"), "Control hit area shrank");
+        let control_bottom = 12 + 40; // Theme.space-3 + 40px
+
+        let region = today
+            .split("// Two explicit reorder steps")
+            .nth(1)
+            .expect("Today lost the reorder targets");
+        let ys: Vec<i32> = region
+            .lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix("y: ")?
+                    .strip_suffix("px;")?
+                    .parse()
+                    .ok()
+            })
+            .collect();
+        assert_eq!(ys.len(), 2, "expected a y for both reorder targets: {ys:?}");
+        for y in ys {
+            assert!(
+                y >= control_bottom,
+                "reorder target at y={y}px overlaps the Control ending at {control_bottom}px"
+            );
+            assert!(
+                y + 40 <= 120,
+                "reorder target at y={y}px runs past the 120px card"
+            );
+        }
     }
 
     #[test]

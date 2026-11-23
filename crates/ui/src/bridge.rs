@@ -292,7 +292,9 @@ fn parse_goals(bytes: &[u8]) -> Vec<(u8, u32)> {
     bytes
         .get(2..)
         .unwrap_or_default()
-        .chunks_exact(5)
+        .as_chunks::<5>()
+        .0
+        .iter()
         .map(|chunk| {
             (
                 chunk[0],
@@ -332,10 +334,11 @@ fn action_label(action: &Action) -> String {
 impl AppState {
     /// Attach a device connection and a clock used for update timestamps.
     pub fn with_link(link: impl DeviceLink + 'static, now: fn() -> i64) -> Self {
-        let mut state = Self::default();
-        state.link = Some(Box::new(link));
-        state.now = now;
-        state
+        Self {
+            link: Some(Box::new(link)),
+            now,
+            ..Self::default()
+        }
     }
 
     /// Persist every decoded reading to the local SQLite store.
@@ -823,7 +826,13 @@ impl AppState {
             return Ok(());
         };
         self.control_sheet_open = false;
-        self.act(action)
+        let result = self.act(action);
+        // A failed write must reach the status strip, like a failed refresh.
+        if let Err(ref error) = result {
+            self.failed = true;
+            self.last_error = Some(error.to_string());
+        }
+        result
     }
 
     pub fn control_sheet_open(&self) -> bool {
