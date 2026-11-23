@@ -11,147 +11,161 @@ export struct CardView {
 }
 
 export component TodaySurface inherits Rectangle {
+    in property <bool> narrow: false;
     in property <[CardView]> cards: [];
     in property <bool> reduced-transparency: false;
     in property <bool> high-contrast: false;
     callback reorder(string, int);
     callback open-control(int);
 
-    for card[i] in root.cards: Rectangle {
-        x: Theme.space-6 + Math.mod(i, 2) * (parent.width / 2);
-        y: Theme.space-6 + Math.floor(i / 2) * 132px;
-        width: parent.width / 2 - Theme.space-3;
-        height: 120px;
+    // One column at 360dp keeps the 88px Control and both 40px reorder targets
+    // clear of each other; wide viewports keep the original two-column grid.
+    property <int> columns: root.narrow ? 1 : 2;
 
-        GlassCard {
-            width: 100%;
-            height: 100%;
-            card-radius: Theme.radius-md;
-            reduced-transparency: root.reduced-transparency;
-            high-contrast: root.high-contrast;
-        }
-        Text {
-            x: Theme.space-6;
-            y: Theme.space-3;
-            text: card.title;
-            color: Theme.text-secondary;
-            font-size: Theme.font-body;
-        }
-        // Figures sit on a near-opaque surface above the glass card.
-        Rectangle {
-            x: Theme.space-6;
-            y: Theme.space-6 + Theme.font-body;
-            width: parent.width - Theme.space-6 * 2 - 64px;
-            height: 48px;
-            background: Theme.content-surface;
-            border-radius: Theme.radius-sm;
+    Flickable {
+        width: 100%;
+        height: 100%;
+        content-width: self.width;
+        content-height: Math.max(
+            self.height,
+            (root.cards.length + root.columns - 1) / root.columns * 132px + Theme.space-6
+        );
+        for card[i] in root.cards: Rectangle {
+            x: Theme.space-3 + Math.mod(i, root.columns) * (parent.width / root.columns);
+            y: Theme.space-3 + Math.floor(i / root.columns) * 132px;
+            width: parent.width / root.columns - Theme.space-3 * 2;
+            height: 120px;
+
+            GlassCard {
+                width: 100%;
+                height: 100%;
+                card-radius: Theme.radius-md;
+                reduced-transparency: root.reduced-transparency;
+                high-contrast: root.high-contrast;
+            }
             Text {
-                x: Theme.space-3;
-                y: (parent.height - self.height) / 2;
-                text: card.value;
-                color: Theme.text-primary;
-                font-size: Theme.font-display;
+                x: Theme.space-6;
+                y: Theme.space-3;
+                text: card.title;
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+            }
+            // Figures sit on a near-opaque surface above the glass card.
+            Rectangle {
+                x: Theme.space-6;
+                y: Theme.space-6 + Theme.font-body;
+                width: parent.width - Theme.space-6 * 2 - 64px;
+                height: 48px;
+                background: Theme.content-surface;
+                border-radius: Theme.radius-sm;
+                Text {
+                    x: Theme.space-3;
+                    y: (parent.height - self.height) / 2;
+                    text: card.value;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-display;
+                    font-family: Theme.numeral-font;
+                }
+            }
+            Text {
+                x: Theme.space-6;
+                y: 90px;
+                text: card.detail;
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+            }
+            Text {
+                x: Theme.space-6;
+                y: 104px;
+                text: "Updated \{card.updated-at}";
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
                 font-family: Theme.numeral-font;
             }
-        }
-        Text {
-            x: Theme.space-6;
-            y: 90px;
-            text: card.detail;
-            color: Theme.text-secondary;
-            font-size: Theme.font-micro;
-        }
-        Text {
-            x: Theme.space-6;
-            y: 104px;
-            text: "Updated \{card.updated-at}";
-            color: Theme.text-secondary;
-            font-size: Theme.font-micro;
-            font-family: Theme.numeral-font;
-        }
-        // Only readings with an L-verified write mapping advertise a control.
-        // First click arms the action; the sheet's Confirm performs the write.
-        if card.writable: Rectangle {
-            x: parent.width - 100px;
-            y: Theme.space-3;
-            width: 88px;
-            height: 40px;
-            background: Theme.accent;
-            opacity: control-touch.pressed ? 0.8 : 1;
-            border-radius: Theme.radius-sm;
-            accessible-role: button;
-            accessible-label: "Control " + card.title;
-            Text {
-                width: 100%;
-                height: 100%;
-                text: "Control";
-                color: Theme.zinc-950;
-                font-size: Theme.font-label;
-                font-weight: 600;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            control-touch := TouchArea {
-                clicked => { root.open-control(i); }
-            }
-        }
-        // Two explicit reorder steps, wired to AppState::move_card by the host.
-        // 40px hit areas; the 12px arrow is only the visible glyph.
-        up-scope := FocusScope {
-            x: parent.width - 92px;
-            y: 48px;
-            width: 40px;
-            height: 40px;
-            accessible-role: button;
-            accessible-label: "Move " + card.title + " up";
-            Rectangle {
-                width: 100%;
-                height: 100%;
-                background: up.pressed ? Theme.accent : Theme.glass-card-dark;
+            // Only readings with an L-verified write mapping advertise a control.
+            // First click arms the action; the sheet's Confirm performs the write.
+            if card.writable: Rectangle {
+                x: parent.width - 100px;
+                y: Theme.space-3;
+                width: 88px;
+                height: 40px;
+                background: Theme.accent;
+                opacity: control-touch.pressed ? 0.8 : 1;
                 border-radius: Theme.radius-sm;
-                border-width: up-scope.has-focus || root.high-contrast ? 2px : 1px;
-                border-color: up-scope.has-focus ? Theme.focus-ring :
-                    (root.high-contrast ? Theme.high-contrast-border : Theme.card-edge);
+                accessible-role: button;
+                accessible-label: "Control " + card.title;
                 Text {
                     width: 100%;
                     height: 100%;
-                    text: "↑";
-                    color: up.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    text: "Control";
+                    color: Theme.zinc-950;
                     font-size: Theme.font-label;
+                    font-weight: 600;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
-                up := TouchArea {
-                    clicked => { root.reorder(card.key, -1); }
+                control-touch := TouchArea {
+                    clicked => { root.open-control(i); }
                 }
             }
-        }
-        down-scope := FocusScope {
-            x: parent.width - 48px;
-            y: 48px;
-            width: 40px;
-            height: 40px;
-            accessible-role: button;
-            accessible-label: "Move " + card.title + " down";
-            Rectangle {
-                width: 100%;
-                height: 100%;
-                background: down.pressed ? Theme.accent : Theme.glass-card-dark;
-                border-radius: Theme.radius-sm;
-                border-width: down-scope.has-focus || root.high-contrast ? 2px : 1px;
-                border-color: down-scope.has-focus ? Theme.focus-ring :
-                    (root.high-contrast ? Theme.high-contrast-border : Theme.card-edge);
-                Text {
+            // Two explicit reorder steps, wired to AppState::move_card by the host.
+            // 40px hit areas; the 12px arrow is only the visible glyph.
+            up-scope := FocusScope {
+                x: parent.width - 92px;
+                y: 48px;
+                width: 40px;
+                height: 40px;
+                accessible-role: button;
+                accessible-label: "Move " + card.title + " up";
+                Rectangle {
                     width: 100%;
                     height: 100%;
-                    text: "↓";
-                    color: down.pressed ? Theme.zinc-950 : Theme.text-primary;
-                    font-size: Theme.font-label;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    background: up.pressed ? Theme.accent : Theme.glass-card-dark;
+                    border-radius: Theme.radius-sm;
+                    border-width: up-scope.has-focus || root.high-contrast ? 2px : 1px;
+                    border-color: up-scope.has-focus ? Theme.focus-ring :
+                        (root.high-contrast ? Theme.high-contrast-border : Theme.card-edge);
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "↑";
+                        color: up.pressed ? Theme.zinc-950 : Theme.text-primary;
+                        font-size: Theme.font-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    up := TouchArea {
+                        clicked => { root.reorder(card.key, -1); }
+                    }
                 }
-                down := TouchArea {
-                    clicked => { root.reorder(card.key, 1); }
+            }
+            down-scope := FocusScope {
+                x: parent.width - 48px;
+                y: 48px;
+                width: 40px;
+                height: 40px;
+                accessible-role: button;
+                accessible-label: "Move " + card.title + " down";
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    background: down.pressed ? Theme.accent : Theme.glass-card-dark;
+                    border-radius: Theme.radius-sm;
+                    border-width: down-scope.has-focus || root.high-contrast ? 2px : 1px;
+                    border-color: down-scope.has-focus ? Theme.focus-ring :
+                        (root.high-contrast ? Theme.high-contrast-border : Theme.card-edge);
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "↓";
+                        color: down.pressed ? Theme.zinc-950 : Theme.text-primary;
+                        font-size: Theme.font-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    down := TouchArea {
+                        clicked => { root.reorder(card.key, 1); }
+                    }
                 }
             }
         }

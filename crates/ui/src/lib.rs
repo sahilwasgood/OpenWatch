@@ -568,9 +568,9 @@ mod tests {
     fn device_grid_rows_fit_and_do_not_overlap() {
         let device = include_str!("../ui/device.slint");
         for expression in [
-            "Math.mod(i, 3) * (parent.width / 3) + Theme.space-3",
-            "Math.floor(i / 3) * 88px",
-            "width: parent.width / 3 - Theme.space-6",
+            "Math.mod(i, root.columns) * (parent.width / root.columns) + Theme.space-3",
+            "Math.floor(i / root.columns) * 88px",
+            "width: parent.width / root.columns - Theme.space-6",
             "height: 84px",
         ] {
             assert!(device.contains(expression), "device grid lost {expression}");
@@ -587,7 +587,7 @@ mod tests {
         );
         // Column c: x = c*step + space-3, width = step - space-6; the next
         // column starts at (c+1)*step + space-3, so the gap must stay positive.
-        let step = 792 / columns; // AppWindow content width / 3
+        let step = 792 / columns; // wide content width (1040 - 232 - 16) / 3
         let first_right = 12 + (step - 24);
         let next_left = step + 12;
         assert!(first_right < next_left, "same-band columns overlap");
@@ -900,5 +900,129 @@ mod tests {
             region.contains("Theme.focus-ring"),
             "reorder controls need a visible focus ring"
         );
+    }
+
+    #[test]
+    fn shell_has_no_fixed_desktop_geometry_and_exposes_narrow() {
+        let shell = source("app-window.slint");
+        // The old shell pinned both axes; responsive layout derives them.
+        assert!(
+            !shell.contains("width: 1040px"),
+            "shell still pins 1040px width"
+        );
+        assert!(
+            !shell.contains("height: 720px"),
+            "shell still pins 720px height"
+        );
+        assert!(!shell.contains("1040px") && !shell.contains("720px"));
+        assert!(
+            shell.contains("min-width: 360px"),
+            "Android 360dp floor missing"
+        );
+        assert!(
+            shell.contains("min-height: 600px"),
+            "600px height floor missing"
+        );
+        assert!(
+            shell.contains("narrow: root.width < 700px"),
+            "narrow must flip at the 700px breakpoint"
+        );
+        // Pane geometry is derived from the window, not hard-coded offsets.
+        assert!(
+            shell.contains("root.width"),
+            "pane geometry lost root.width"
+        );
+        assert!(shell.contains("content-width"), "shared pane width missing");
+    }
+
+    #[test]
+    fn bottom_nav_replaces_sidebar_when_narrow() {
+        let shell = source("app-window.slint");
+        assert!(
+            shell.contains("component BottomNav"),
+            "no bottom-nav component"
+        );
+        assert!(
+            shell.contains("component PaneHeader"),
+            "no shared pane header"
+        );
+        assert!(
+            shell.contains("visible: !root.narrow"),
+            "sidebar must hide on narrow viewports"
+        );
+        assert!(
+            shell.contains("visible: root.narrow"),
+            "bottom nav must show on narrow viewports"
+        );
+        assert_eq!(
+            shell.matches("PaneHeader {").count(),
+            4,
+            "all four panes must use the shared header"
+        );
+        // Every destination gets a >=40px target in the bottom bar.
+        let nav = shell
+            .split("component BottomNav")
+            .nth(1)
+            .expect("no BottomNav body")
+            .split("export component AppWindow")
+            .next()
+            .unwrap();
+        assert!(
+            nav.contains("height: 44px"),
+            "bottom-nav targets under 40px"
+        );
+        assert!(
+            nav.contains("Navigation.destinations"),
+            "bottom nav must render all four destinations"
+        );
+    }
+
+    #[test]
+    fn pane_bodies_size_from_parent_width() {
+        let today = source("today.slint");
+        let device = source("device.slint");
+        let workbench = source("workbench.slint");
+        let data = source("data.slint");
+        assert!(
+            today.contains("parent.width / root.columns"),
+            "today cards must size from parent.width"
+        );
+        assert!(
+            device.contains("parent.width / root.columns"),
+            "device rows must size from parent.width"
+        );
+        for (name, src) in [("workbench", workbench), ("data", data)] {
+            assert!(
+                src.contains("panel-width: (root.width - panel-gap) / 2;"),
+                "{name} panels must be a proportion of the surface width"
+            );
+            for fixed in ["width: 380px", "width: 392px", "width: 396px"] {
+                assert!(!src.contains(fixed), "{name} still pins {fixed}");
+            }
+        }
+    }
+
+    #[test]
+    fn interactive_targets_are_forty_px_at_narrow_width() {
+        for name in ["app-window.slint", "workbench.slint", "data.slint"] {
+            let src = source(name);
+            for small in [
+                "height: 26px",
+                "height: 28px",
+                "height: 30px",
+                "height: 38px",
+            ] {
+                assert!(
+                    !src.contains(small),
+                    "{name} still has a {small} interactive target"
+                );
+            }
+        }
+        for name in ["workbench.slint", "data.slint"] {
+            assert!(
+                source(name).contains("height: 40px"),
+                "{name} has no 40px interactive target"
+            );
+        }
     }
 }
