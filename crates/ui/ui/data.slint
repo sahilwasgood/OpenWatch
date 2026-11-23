@@ -5,13 +5,15 @@ import { Theme } from "theme.slint";
 
 export component DataSurface inherits Rectangle {
     in property <bool> narrow: false;
-    // History: the selected series' values are normalized to 0..1 for the bars;
-    // the human values are kept alongside so the chart never shows bare hex.
+    // History: the newest values are normalized between the window's min and
+    // max; the human values and axis endpoints are kept alongside the bars.
     in property <[string]> series-keys: [];
     in property <[float]> points: [];
     in property <[string]> point-values: [];
     in property <int> selected-series: 0;
     in property <string> series-summary: "No history yet";
+    in property <string> axis-min: "0";
+    in property <string> axis-max: "1";
 
     in property <string> preview: "";
     in property <string> status: "Local store · nothing leaves this device";
@@ -25,6 +27,7 @@ export component DataSurface inherits Rectangle {
     callback select-series(int);
     callback export-json();
     callback export-csv();
+    callback copy-preview();
     callback request-delete();
     callback confirm-delete();
     callback cancel-delete();
@@ -82,20 +85,43 @@ export component DataSurface inherits Rectangle {
                 x: Theme.space-3; y: 80px; width: parent.width - Theme.space-6; height: 160px;
                 background: Theme.zinc-950;
                 border-radius: Theme.radius-sm;
-                // One bar per reading. Values are normalized upstream; the raw
-                // human value is printed above the bar so the chart is readable.
+                // A 48px left gutter carries the min/max axis; bars scale
+                // between those endpoints instead of from zero.
+                if root.points.length > 0 : Text {
+                    x: 2px; y: 2px; width: 42px;
+                    text: root.axis-max;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-micro;
+                    font-family: Theme.numeral-font;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                }
+                if root.points.length > 0 : Text {
+                    x: 2px; y: parent.height - 20px; width: 42px;
+                    text: root.axis-min;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-micro;
+                    font-family: Theme.numeral-font;
+                    horizontal-alignment: right;
+                    overflow: elide;
+                }
+                if root.points.length > 0 : Rectangle {
+                    x: 44px; y: parent.height - 20px;
+                    width: parent.width - 52px; height: 1px;
+                    background: Theme.card-edge;
+                }
                 for value[i] in root.points: Rectangle {
-                    x: 8px + i * (parent.width - 16px) / Math.max(root.points.length, 1);
+                    x: 48px + i * (parent.width - 56px) / Math.max(root.points.length, 1);
                     y: parent.height - 20px - (parent.height - 32px) * value;
-                    width: (parent.width - 16px) / Math.max(root.points.length, 1) - 2px;
+                    width: (parent.width - 56px) / Math.max(root.points.length, 1) - 2px;
                     height: Math.max(2px, (parent.height - 32px) * value);
                     background: Theme.accent;
                     border-radius: 2px;
                 }
                 for value[i] in root.point-values: Text {
-                    x: 8px + i * (parent.width - 16px) / Math.max(root.point-values.length, 1);
+                    x: 48px + i * (parent.width - 56px) / Math.max(root.point-values.length, 1);
                     y: parent.height - 16px;
-                    width: (parent.width - 16px) / Math.max(root.point-values.length, 1) - 2px;
+                    width: (parent.width - 56px) / Math.max(root.point-values.length, 1) - 2px;
                     text: value;
                     color: Theme.text-secondary;
                     font-size: Theme.font-micro;
@@ -104,7 +130,7 @@ export component DataSurface inherits Rectangle {
                     overflow: elide;
                 }
                 if root.points.length == 0 : Text {
-                    x: Theme.space-3; y: (parent.height - self.height) / 2;
+                    x: 48px; y: (parent.height - self.height) / 2;
                     text: "No numeric readings recorded yet";
                     color: Theme.text-secondary;
                     font-size: Theme.font-body;
@@ -172,12 +198,46 @@ export component DataSurface inherits Rectangle {
                 csv-touch := TouchArea { clicked => { root.export-csv(); } }
             }
             Rectangle {
-                x: Theme.space-3; y: 80px; width: parent.width - Theme.space-6; height: 174px;
+                x: Theme.space-3; y: 80px; width: 120px; height: 40px;
+                visible: root.preview != "";
+                background: copy-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Copy export";
+                Text {
+                    width: 100%; height: 100%;
+                    text: "Copy";
+                    color: copy-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                copy-touch := TouchArea {
+                    clicked => {
+                        // Native TextInput copies the exact preview text to the
+                        // platform clipboard; no new dependency is needed.
+                        preview-input.select-all();
+                        preview-input.copy();
+                        root.copy-preview();
+                    }
+                }
+            }
+            Rectangle {
+                x: Theme.space-3; y: 128px; width: parent.width - Theme.space-6; height: 126px;
                 background: Theme.zinc-950;
                 border-radius: Theme.radius-sm;
-                Text {
+                if root.preview == "" : Text {
                     x: Theme.space-3; y: 6px; width: parent.width - Theme.space-6;
-                    text: root.preview != "" ? root.preview : "Choose JSON or CSV to build an export here.";
+                    text: "Choose JSON or CSV to build an export here.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-micro;
+                    wrap: word-wrap;
+                }
+                preview-input := TextInput {
+                    x: Theme.space-3; y: 6px; width: parent.width - Theme.space-6;
+                    text: root.preview;
+                    read-only: true;
                     color: Theme.text-secondary;
                     font-size: Theme.font-micro;
                     font-family: Theme.numeral-font;

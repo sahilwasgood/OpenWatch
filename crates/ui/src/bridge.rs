@@ -116,6 +116,13 @@ pub struct AppState {
     pub connection: ConnectionState,
     /// Pre-formatted UTC label, e.g. `2026-11-22 14:03 UTC`.
     pub last_sync: Option<String>,
+    /// UI-owned flags. The core connection stays authoritative for "connected";
+    /// these describe the last refresh, which can fail while still connected.
+    pub syncing: bool,
+    pub failed: bool,
+    pub last_error: Option<String>,
+    /// Epoch seconds of the last successful refresh, for the stale threshold.
+    last_refresh_ok: Option<i64>,
     /// Today's reorderable metric cards.
     pub cards: Vec<Reading>,
     /// Device identity, settings, apps, alarms, goals and faces.
@@ -135,6 +142,9 @@ impl fmt::Debug for AppState {
             .field("battery", &self.battery)
             .field("connection", &self.connection)
             .field("last_sync", &self.last_sync)
+            .field("syncing", &self.syncing)
+            .field("failed", &self.failed)
+            .field("last_error", &self.last_error)
             .field("cards", &self.cards)
             .field("device_values", &self.device_values)
             .finish_non_exhaustive()
@@ -148,6 +158,10 @@ impl Default for AppState {
             battery: 0,
             connection: ConnectionState::Idle,
             last_sync: None,
+            syncing: false,
+            failed: false,
+            last_error: None,
+            last_refresh_ok: None,
             cards: Vec::new(),
             device_values: Vec::new(),
             control_sheet_open: false,
@@ -169,17 +183,54 @@ pub struct UiOptions {
 
 fn connection_label(state: ConnectionState) -> &'static str {
     match state {
-        ConnectionState::Idle => "idle",
-        ConnectionState::Scanning => "scanning",
-        ConnectionState::Connecting => "connecting",
-        ConnectionState::Connected => "connected",
-        ConnectionState::Reconnecting => "reconnecting",
-        ConnectionState::NotFound => "not found",
+        ConnectionState::Idle => "Idle",
+        ConnectionState::Scanning => "Scanning",
+        ConnectionState::Connecting => "Connecting",
+        ConnectionState::Connected => "Connected",
+        ConnectionState::Reconnecting => "Reconnecting",
+        ConnectionState::NotFound => "Not found",
     }
 }
 
-fn last_sync_label(value: Option<&str>) -> &str {
-    value.unwrap_or("never")
+fn last_sync_label(value: Option<&str>) -> String {
+    match value {
+        Some(stamp) => format!("Synced {stamp}"),
+        None => "Never synced".into(),
+    }
+}
+
+/// A refresh older than this is stale, even while the link reports connected.
+const STALE_AFTER_SECS: i64 = 5 * 60;
+
+/// The displayed sync state. Connection state still comes from the core; this
+/// adds the UI-owned refresh result on top of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncPhase {
+    Syncing,
+    Failed,
+    Stale,
+    Connected,
+    Idle,
+    Scanning,
+    Connecting,
+    Reconnecting,
+    NotFound,
+}
+
+impl SyncPhase {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Syncing => "Syncing",
+            Self::Failed => "Sync failed — retry",
+            Self::Stale => "Stale · sync now",
+            Self::Connected => "Connected",
+            Self::Idle => "Idle",
+            Self::Scanning => "Scanning",
+            Self::Connecting => "Connecting",
+            Self::Reconnecting => "Reconnecting",
+            Self::NotFound => "Not found",
+        }
+    }
 }
 
 pub(crate) fn system_now() -> i64 {
@@ -308,6 +359,34 @@ impl AppState {
         }
     }
 
+    /// An in-flight refresh wins, then a failed one, then the core connection
+    /// (downgraded to stale when no refresh has succeeded in five minutes).
+    pub fn sync_phase(&self) -> SyncPhase {
+        if self.syncing {
+            return SyncPhase::Syncing;
+        }
+        if self.failed {
+            return SyncPhase::Failed;
+        }
+        match self.connection {
+            ConnectionState::Connected => {
+                let stale = self
+                    .last_refresh_ok
+                    .is_some_and(|at| (self.now)().saturating_sub(at) > STALE_AFTER_SECS);
+                if stale {
+                    SyncPhase::Stale
+                } else {
+                    SyncPhase::Connected
+                }
+            }
+            ConnectionState::Idle => SyncPhase::Idle,
+            ConnectionState::Scanning => SyncPhase::Scanning,
+            ConnectionState::Connecting => SyncPhase::Connecting,
+            ConnectionState::Reconnecting => SyncPhase::Reconnecting,
+            ConnectionState::NotFound => SyncPhase::NotFound,
+        }
+    }
+
     /// Most-recent frames for the Workbench raw inspector. No store configured
     /// means no frames; the surface stays empty rather than inventing data.
     pub fn stored_frames(&self, limit: i64) -> Result<Vec<FrameRow>, AppError> {
@@ -392,7 +471,24 @@ impl AppState {
 
     /// Query the live read opcodes and rebuild both surfaces. A missing reply
     /// simply omits its value; one unavailable read never blanks the rest.
+    /// A hard failure is recorded for the failure state instead of discarded.
     pub fn refresh_reads(&mut self) -> Result<(), AppError> {
+        match self.try_refresh_reads() {
+            Ok(()) => {
+                self.failed = false;
+                self.last_error = None;
+                self.last_refresh_ok = Some((self.now)());
+                Ok(())
+            }
+            Err(error) => {
+                self.failed = true;
+                self.last_error = Some(error.to_string());
+                Err(error)
+            }
+        }
+    }
+
+    fn try_refresh_reads(&mut self) -> Result<(), AppError> {
         let link: &dyn DeviceLink = self
             .link
             .as_ref()
@@ -749,13 +845,23 @@ impl AppState {
         window.set_control_sheet_label(SharedString::from(label.as_str()));
     }
 
+    /// Publish the UI-owned refresh state. Called on sync start as well as in
+    /// `apply_to`, so the strip changes before a blocking read begins.
+    pub(crate) fn apply_sync(&self, window: &AppWindow) {
+        window.set_syncing(self.syncing);
+        window.set_sync_phase(SharedString::from(self.sync_phase().label()));
+        window.set_sync_failed(self.failed);
+        window.set_last_error(SharedString::from(self.last_error.as_deref().unwrap_or("")));
+    }
+
     pub(crate) fn apply_to(&self, window: &AppWindow, options: &UiOptions) {
         window.set_device_name(SharedString::from(self.device_name.as_str()));
         window.set_battery(self.battery as i32);
         window.set_connection_state(SharedString::from(connection_label(self.connection)));
-        window.set_last_sync(SharedString::from(last_sync_label(
-            self.last_sync.as_deref(),
-        )));
+        window.set_last_sync(SharedString::from(
+            last_sync_label(self.last_sync.as_deref()).as_str(),
+        ));
+        self.apply_sync(window);
         window.set_reduced_transparency(options.reduced_transparency);
         window.set_high_contrast(options.high_contrast);
         self.apply_cards(window);
@@ -801,17 +907,17 @@ mod tests {
 
     #[test]
     fn connection_states_have_human_labels() {
-        assert_eq!(connection_label(ConnectionState::Idle), "idle");
-        assert_eq!(connection_label(ConnectionState::Connected), "connected");
-        assert_eq!(connection_label(ConnectionState::NotFound), "not found");
+        assert_eq!(connection_label(ConnectionState::Idle), "Idle");
+        assert_eq!(connection_label(ConnectionState::Connected), "Connected");
+        assert_eq!(connection_label(ConnectionState::NotFound), "Not found");
     }
 
     #[test]
     fn missing_last_sync_reads_never() {
-        assert_eq!(last_sync_label(None), "never");
+        assert_eq!(last_sync_label(None), "Never synced");
         assert_eq!(
             last_sync_label(Some("2026-11-22 14:03 UTC")),
-            "2026-11-22 14:03 UTC"
+            "Synced 2026-11-22 14:03 UTC"
         );
     }
 
@@ -944,6 +1050,34 @@ mod tests {
                 card.key
             );
         }
+    }
+
+    fn soon_now() -> i64 {
+        fixed_now() + 299
+    }
+
+    fn late_now() -> i64 {
+        fixed_now() + 301
+    }
+
+    #[test]
+    fn sync_phase_goes_stale_five_minutes_after_the_last_refresh() {
+        let link = MockLink {
+            replies: live_fixtures(),
+            writes: Rc::new(RefCell::new(Vec::new())),
+            battery: 18,
+        };
+        let mut state = AppState::with_link(link, fixed_now);
+        state.refresh_reads().unwrap();
+        state.sync_connection();
+        assert_eq!(state.connection, ConnectionState::Connected);
+        assert_eq!(state.sync_phase(), SyncPhase::Connected);
+
+        state.now = soon_now;
+        assert_eq!(state.sync_phase(), SyncPhase::Connected);
+        state.now = late_now;
+        assert_eq!(state.sync_phase(), SyncPhase::Stale);
+        assert_eq!(state.sync_phase().label(), "Stale · sync now");
     }
 
     #[test]

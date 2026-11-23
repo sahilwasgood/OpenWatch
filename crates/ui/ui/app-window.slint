@@ -218,6 +218,8 @@ component DataPane inherits Rectangle {
     in property <[string]> point-values: [];
     in property <int> selected-series: 0;
     in property <string> series-summary: "";
+    in property <string> axis-min: "0";
+    in property <string> axis-max: "1";
     in property <string> preview: "";
     in property <string> status: "";
     in property <bool> pending-delete: false;
@@ -227,6 +229,7 @@ component DataPane inherits Rectangle {
     callback select-series(int);
     callback export-json();
     callback export-csv();
+    callback copy-preview();
     callback request-delete();
     callback confirm-delete();
     callback cancel-delete();
@@ -253,6 +256,8 @@ component DataPane inherits Rectangle {
         point-values: root.point-values;
         selected-series: root.selected-series;
         series-summary: root.series-summary;
+        axis-min: root.axis-min;
+        axis-max: root.axis-max;
         preview: root.preview;
         status: root.status;
         pending-delete: root.pending-delete;
@@ -264,6 +269,7 @@ component DataPane inherits Rectangle {
         select-series(i) => { root.select-series(i); }
         export-json() => { root.export-json(); }
         export-csv() => { root.export-csv(); }
+        copy-preview() => { root.copy-preview(); }
         request-delete() => { root.request-delete(); }
         confirm-delete() => { root.confirm-delete(); }
         cancel-delete() => { root.cancel-delete(); }
@@ -279,9 +285,14 @@ export component AppWindow inherits Window {
     // State applied by the Rust bridge.
     in-out property <string> device-name: "—";
     in-out property <int> battery: -1;
-    in-out property <string> connection-state: "idle";
-    in-out property <string> last-sync: "never";
+    in-out property <string> connection-state: "Idle";
+    in-out property <string> last-sync: "Never synced";
     in-out property <bool> syncing: false;
+    // UI-owned refresh state. `connection-state` stays authoritative; these
+    // describe the last refresh, so a failure no longer reads as "connected".
+    in-out property <string> sync-phase: "Idle";
+    in-out property <bool> sync-failed: false;
+    in-out property <string> last-error: "";
     in-out property <int> active-tab: 0;
     in-out property <[CardView]> metric-cards: [];
     in-out property <[RowView]> device-values: [];
@@ -329,6 +340,8 @@ export component AppWindow inherits Window {
     in-out property <[string]> data-point-values: [];
     in-out property <int> data-selected-series: 0;
     in-out property <string> data-series-summary: "No history yet";
+    in-out property <string> data-axis-min: "0";
+    in-out property <string> data-axis-max: "1";
     in-out property <string> data-preview: "";
     in-out property <string> data-status: "Local store · nothing leaves this device";
     in-out property <bool> data-pending-delete: false;
@@ -336,6 +349,7 @@ export component AppWindow inherits Window {
     callback select-data-series(int);
     callback export-json();
     callback export-csv();
+    callback copy-preview();
     callback request-delete();
     callback confirm-delete();
     callback cancel-delete();
@@ -368,9 +382,10 @@ export component AppWindow inherits Window {
     // Status color is derived from the bridge label; the text label remains
     // visible so color is never the only signal.
     out property <color> status-color:
-        root.connection-state == "connected" ? Theme.status-good :
-        (root.connection-state == "reconnecting" || root.connection-state == "scanning" || root.connection-state == "connecting") ? Theme.status-warn :
-        root.connection-state == "not found" ? Theme.status-bad :
+        root.sync-failed ? Theme.status-bad :
+        root.sync-phase == "Syncing" || root.sync-phase == "Reconnecting" || root.sync-phase == "Scanning" || root.sync-phase == "Connecting" ? Theme.status-warn :
+        root.sync-phase == "Connected" ? Theme.status-good :
+        root.sync-phase == "Not found" ? Theme.status-bad :
         Theme.text-secondary;
 
     // One shared Window serves desktop and Android. 360dp/600px is the hard
@@ -494,17 +509,30 @@ export component AppWindow inherits Window {
             }
             Text {
                 x: parent.width - 324px;
-                y: 16px;
-                text: root.connection-state;
-                color: root.high-contrast ? Theme.text-primary : root.status-color;
-                font-size: Theme.font-body;
+                y: 6px;
+                width: 170px;
+                text: root.sync-phase;
+                color: root.sync-failed ? Theme.status-bad : (root.high-contrast ? Theme.text-primary : root.status-color);
+                font-size: Theme.font-label;
+                overflow: elide;
             }
             Text {
-                x: parent.width - 240px;
-                y: 16px;
-                text: "Synced \{root.last-sync}";
+                x: parent.width - 324px;
+                y: 22px;
+                width: 170px;
+                text: root.last-sync;
                 color: Theme.text-secondary;
-                font-size: Theme.font-body;
+                font-size: Theme.font-micro;
+                overflow: elide;
+            }
+            if root.sync-failed : Text {
+                x: parent.width - 324px;
+                y: 38px;
+                width: 170px;
+                text: root.last-error;
+                color: Theme.status-bad;
+                font-size: Theme.font-micro;
+                overflow: elide;
             }
             Rectangle {
                 x: parent.width - 150px;
@@ -561,8 +589,8 @@ export component AppWindow inherits Window {
                 x: parent.width - 80px;
                 y: Theme.space-2;
                 width: 68px;
-                text: root.connection-state;
-                color: root.high-contrast ? Theme.text-primary : root.status-color;
+                text: root.sync-phase;
+                color: root.sync-failed ? Theme.status-bad : (root.high-contrast ? Theme.text-primary : root.status-color);
                 font-size: Theme.font-label;
                 overflow: elide;
             }
@@ -586,10 +614,19 @@ export component AppWindow inherits Window {
                 x: 108px;
                 y: 44px;
                 width: parent.width - 260px;
-                text: "Synced \{root.last-sync}";
+                text: root.last-sync;
                 color: Theme.text-secondary;
-                font-size: Theme.font-label;
+                font-size: Theme.font-micro;
                 overflow: elide;
+            }
+            if root.sync-failed : Text {
+                x: 108px;
+                y: 60px;
+                width: parent.width - 260px;
+                text: root.last-error;
+                color: Theme.status-bad;
+                font-size: Theme.font-micro;
+                wrap: word-wrap;
             }
             Rectangle {
                 x: parent.width - 140px;
@@ -682,6 +719,8 @@ export component AppWindow inherits Window {
             point-values: root.data-point-values;
             selected-series: root.data-selected-series;
             series-summary: root.data-series-summary;
+            axis-min: root.data-axis-min;
+            axis-max: root.data-axis-max;
             preview: root.data-preview;
             status: root.data-status;
             pending-delete: root.data-pending-delete;
@@ -691,6 +730,7 @@ export component AppWindow inherits Window {
             select-series(i) => { root.select-data-series(i); }
             export-json() => { root.export-json(); }
             export-csv() => { root.export-csv(); }
+            copy-preview() => { root.copy-preview(); }
             request-delete() => { root.request-delete(); }
             confirm-delete() => { root.confirm-delete(); }
             cancel-delete() => { root.cancel-delete(); }

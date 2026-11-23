@@ -7,7 +7,7 @@
 
 slint::include_modules!();
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ pub mod data_surface;
 pub mod data_view;
 pub mod link;
 
-pub use bridge::{Action, AppError, AppState, DeviceLink, Reading, UiOptions};
+pub use bridge::{Action, AppError, AppState, DeviceLink, Reading, SyncPhase, UiOptions};
 use data_surface::DataView;
 use data_view::WorkbenchData;
 pub use link::{connect_watch, ConnectionLink};
@@ -65,21 +65,19 @@ fn run_with_opts(
     }
 
     let sync_options = options.clone();
-    let sync_in_flight = Rc::new(Cell::new(false));
     let schedule_refresh: Rc<dyn Fn()> = Rc::new({
         let shared = state.clone();
         let view = window.clone_strong();
-        let in_flight = sync_in_flight.clone();
         let wb = workbench.clone();
         move || {
-            if in_flight.get() {
+            // The in-flight guard lives on AppState so sync_phase can show it.
+            if shared.borrow().syncing {
                 return;
             }
-            in_flight.set(true);
-            view.set_syncing(true);
+            shared.borrow_mut().syncing = true;
+            shared.borrow().apply_sync(&view);
             let shared = shared.clone();
             let view = view.clone_strong();
-            let flag = in_flight.clone();
             let wb = wb.clone();
             // The one-shot timer fires after this handler returns, so the
             // disabled/"Syncing…" state gets painted before the blocking read.
@@ -91,8 +89,11 @@ fn run_with_opts(
             slint::Timer::single_shot(Duration::ZERO, move || {
                 {
                     let mut state = shared.borrow_mut();
+                    // refresh_reads records its own failure for the UI; the
+                    // result is no longer thrown away here.
                     let _ = state.refresh_reads();
                     state.sync_connection();
+                    state.syncing = false;
                     state.apply_to(&view, &opts_for_refresh.borrow());
                 }
                 // The refresh logged new frames to the store: reload the raw
@@ -100,8 +101,6 @@ fn run_with_opts(
                 let frames = shared.borrow().stored_frames(200).unwrap_or_default();
                 wb.borrow_mut().set_frames(frames);
                 wb.borrow().apply_to(&view);
-                view.set_syncing(false);
-                flag.set(false);
             });
         }
     });
@@ -299,6 +298,15 @@ fn run_with_opts(
         window.on_export_csv(move || {
             let mut data = shared.borrow_mut();
             data.export_csv(&app.borrow());
+            data.apply_to(&view);
+        });
+    }
+    {
+        let shared = data.clone();
+        let view = window.clone_strong();
+        window.on_copy_preview(move || {
+            let mut data = shared.borrow_mut();
+            data.mark_copied();
             data.apply_to(&view);
         });
     }
@@ -512,7 +520,15 @@ mod tests {
 
         // One window per test process: winit cannot recreate its event loop.
         let set = |state: &str| {
-            window.set_connection_state(slint::SharedString::from(state));
+            let label = match state {
+                "connected" => "Connected",
+                "reconnecting" => "Reconnecting",
+                "scanning" => "Scanning",
+                "connecting" => "Connecting",
+                _ => "Not found",
+            };
+            window.set_connection_state(slint::SharedString::from(label));
+            window.set_sync_phase(slint::SharedString::from(label));
             window.get_status_color()
         };
         assert_eq!(
@@ -530,6 +546,13 @@ mod tests {
             set("not found"),
             slint::Color::from_rgb_u8(0xFF, 0x45, 0x3A)
         );
+        window.set_sync_failed(true);
+        assert_eq!(
+            window.get_status_color(),
+            slint::Color::from_rgb_u8(0xFF, 0x45, 0x3A),
+            "a failed refresh must read as an error even while connected"
+        );
+        window.set_sync_failed(false);
     }
 
     #[test]
@@ -1024,5 +1047,112 @@ mod tests {
                 "{name} has no 40px interactive target"
             );
         }
+    }
+
+    #[test]
+    fn failed_refresh_produces_a_visible_failure_state() {
+        // No link means refresh_reads fails. That result must reach the UI
+        // instead of being discarded while the strip keeps reading "connected".
+        let mut state = AppState::default();
+        assert!(state.refresh_reads().is_err());
+        assert!(state.failed, "a failed refresh must set the failed flag");
+        assert!(
+            state
+                .last_error
+                .as_deref()
+                .is_some_and(|error| !error.is_empty()),
+            "a failed refresh must keep a last-error string"
+        );
+        assert!(!state.syncing, "a finished refresh is no longer in flight");
+        assert_eq!(state.sync_phase().label(), "Sync failed — retry");
+        let shell = source("app-window.slint");
+        for token in ["sync-phase", "sync-failed", "last-error"] {
+            assert!(shell.contains(token), "shell lost {token}");
+        }
+        assert!(
+            shell.contains("root.sync-phase"),
+            "phase label is not shown"
+        );
+        assert!(shell.contains("root.sync-failed"), "failure is not styled");
+    }
+
+    #[test]
+    fn workbench_without_selection_shows_an_empty_state() {
+        let wb = source("workbench.slint");
+        assert!(
+            wb.contains("Select a frame to inspect"),
+            "no designed empty state for an empty inspector"
+        );
+        let guard = wb
+            .rfind("if root.selected-frame >= 0")
+            .expect("detail pane is not behind a selection guard");
+        let detail = wb.find("Detail ·").expect("detail pane lost its heading");
+        assert!(guard < detail, "detail row renders without a selection");
+        assert!(
+            crate::data_view::WorkbenchData::default()
+                .selected_hex()
+                .is_none(),
+            "a fresh inspector must have no selection"
+        );
+    }
+
+    #[test]
+    fn data_export_has_a_copy_action_and_confirmation() {
+        let data = source("data.slint");
+        for token in ["\"Copy\"", "copy-preview()", "preview-input.copy()"] {
+            assert!(data.contains(token), "data surface lost {token}");
+        }
+        let shell = source("app-window.slint");
+        assert!(
+            shell.contains("callback copy-preview()"),
+            "shell lost the copy callback"
+        );
+        assert!(
+            include_str!("lib.rs").contains("on_copy_preview"),
+            "host lost the copy callback"
+        );
+        let mut view = DataView::default();
+        view.mark_copied();
+        assert_eq!(view.status(), "Copied to clipboard");
+    }
+
+    #[test]
+    fn chart_uses_a_min_max_baseline_and_the_newest_window() {
+        let mut store = Store::open(":memory:").unwrap();
+        // Close values: a zero-based peak normalization would flatten them.
+        for i in 0i64..30 {
+            store
+                .put_reading("heart-rate", &(50 + i).to_string(), i)
+                .unwrap();
+        }
+        let state = AppState::default().with_store(store);
+        let mut view = DataView::default();
+        view.reload(&state).unwrap();
+        assert_eq!(
+            view.points().len(),
+            crate::data_surface::MAX_CHART_POINTS,
+            "chart must keep only the newest window"
+        );
+        assert_eq!(view.axis_min(), "56");
+        assert_eq!(view.axis_max(), "79");
+        assert_eq!(
+            view.points()[0],
+            0.0,
+            "oldest kept point sits on the baseline"
+        );
+        assert_eq!(*view.points().last().unwrap(), 1.0);
+        assert!(
+            view.points()[1] > 0.0 && view.points()[1] < 0.1,
+            "close values must spread across the axis, not flatten"
+        );
+        let data = source("data.slint");
+        assert!(
+            data.contains("root.axis-min"),
+            "chart lost its min axis label"
+        );
+        assert!(
+            data.contains("root.axis-max"),
+            "chart lost its max axis label"
+        );
     }
 }

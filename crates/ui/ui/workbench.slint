@@ -169,7 +169,7 @@ export component WorkbenchSurface inherits Rectangle {
         width: 100%;
         height: 100%;
         content-width: self.width;
-        content-height: root.narrow ? 712px + panel-gap + 336px + Theme.space-4 : 712px;
+        content-height: root.narrow ? 712px + panel-gap + 400px + Theme.space-4 : 712px;
 
         // Frame table: time, direction, command, confidence tag, confidence,
         // opcode name and the exact hex — the only place hex is rendered.
@@ -219,8 +219,27 @@ export component WorkbenchSurface inherits Rectangle {
             }
         }
 
-        // Detail pane for the selected frame.
-        Rectangle {
+        // Detail pane: a real empty state until a frame is selected, instead
+        // of a dotted row of blank fields and an empty "Frame " prefix.
+        if root.selected-frame < 0 : Rectangle {
+            y: 216px; width: 100%; height: 72px;
+            background: Theme.content-surface;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: Theme.space-3; y: 18px; width: parent.width - Theme.space-6;
+                text: "Select a frame to inspect";
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+            }
+            Text {
+                x: Theme.space-3; y: 42px; width: parent.width - Theme.space-6;
+                text: "Choose a row above to see its opcode, evidence and exact hex.";
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+                overflow: elide;
+            }
+        }
+        if root.selected-frame >= 0 : Rectangle {
             y: 216px; width: 100%; height: 72px;
             background: Theme.content-surface;
             border-radius: Theme.radius-sm;
@@ -247,7 +266,7 @@ export component WorkbenchSurface inherits Rectangle {
             x: 0;
             y: root.narrow ? 712px + panel-gap : 296px;
             width: root.narrow ? parent.width : panel-width;
-            height: 336px;
+            height: 400px;
             background: Theme.content-surface;
             border-radius: Theme.radius-sm;
             Text {
@@ -317,6 +336,23 @@ export component WorkbenchSurface inherits Rectangle {
                 x: Theme.space-3; y: 306px; width: parent.width - Theme.space-6;
                 text: "Preview only — no frame is written to the watch.";
                 color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: Theme.space-3; y: 326px; width: parent.width - Theme.space-6;
+                text: "Recorded actions";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Rectangle {
+                x: 4px; y: 342px; width: parent.width - 8px; height: 50px;
+                background: Theme.zinc-950;
+                border-radius: Theme.radius-sm;
+                Text {
+                    x: Theme.space-2; y: 4px; width: parent.width - Theme.space-4;
+                    text: root.confirmed != "" ? root.confirmed : "No reviewed actions yet.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-micro;
+                    wrap: word-wrap;
+                }
             }
         }
 
