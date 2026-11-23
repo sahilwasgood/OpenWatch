@@ -40,7 +40,7 @@ struct Export {
 
 /// Quote a CSV field only when it contains a delimiter, quote or newline.
 fn csv_field(value: &str) -> String {
-    if value.contains(|c: char| matches!(c, ',' | '"' | '\n' | '\r')) {
+    if value.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", value.replace('"', "\"\""))
     } else {
         value.to_string()

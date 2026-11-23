@@ -77,7 +77,7 @@ fn hex_bytes(hex: &str) -> Vec<u8> {
         .chars()
         .filter(|character| !character.is_whitespace())
         .collect();
-    if compact.len() % 2 != 0 {
+    if !compact.len().is_multiple_of(2) {
         return Vec::new();
     }
     (0..compact.len())
@@ -98,7 +98,7 @@ pub fn opcode_for(hex: &str) -> (String, String) {
         .find(|(cmd, name, _)| {
             *cmd == parsed.cmd
                 && if parsed.cmd == 0xB9 {
-                    sub.map_or(true, |value| name.contains(&format!("B9 {value:02X}")))
+                    sub.is_none_or(|value| name.contains(&format!("B9 {value:02X}")))
                 } else {
                     true
                 }
