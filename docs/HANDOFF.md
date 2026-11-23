@@ -1,15 +1,48 @@
-# OpenWatch — handoff (2026-11-22)
+# OpenWatch — handoff (2026-11-23)
 
-Repo `sahilwasgood/OpenWatch` at `/media/mint/WDC_WD10EZRX_932G/watch/OpenWatch`. Branch `main` @32bde9f (doc-only); implementation on `openwatch-impl` in `.worktrees/openwatch-impl` @8f72e6a.
+## Where things are
 
-**Complete:** Tasks 1–7 — scaffolding/CI, FE EA codec, decoders + confidence registry, command builders, SQLite store, BLE transport + device key, connection manager; 37 tests pass, fmt/clippy clean; live writes logged in `docs/protocol/verification-log.md`.
+- Repo `sahilwasgood/OpenWatch`.
+- Main checkout: `/media/mint/WDC_WD10EZRX_932G/watch/OpenWatch` (branch `main`; doc-only commits incl. seeded backlog/handoff, endpoint probe, live-verify log).
+- Implementation worktree: `/media/mint/WDC_WD10EZRX_932G/watch/OpenWatch/.worktrees/openwatch-impl`, branch `openwatch-impl`. **All implementation commits go here.**
+- At Task 14 start: `openwatch-impl` HEAD `e38e097` (`feat: live-verified protocol registry`), tasks 1–13 complete, review-clean.
 
-**In progress:** Task 8 (Desktop UI shell/theme); worktree has untracked `crates/ui/` and modified `Cargo.lock`. Ledger ruling: all `.slint` files and `AppState` live in the `crates/ui` library — Android cannot link a binary crate. Tasks 9–14 remain.
+## Current state
 
-**Resume:** read the SDD plan and `.superpowers/sdd/2026-11-22-openwatch/progress.md`; work in the worktree; finish 8, then 9–14 (Task 14 is this loop; backlog seeded at `docs/improvement-backlog.md`). At branch finish merge `openwatch-impl` into `main` so doc commits 9bf09b8/32bde9f coexist.
+- Tasks 1–13 complete: workspace/CI, FE EA codec, decoders + confidence registry, command builders, SQLite store, BLE transport + device key, connection manager, Slint desktop UI (`crates/ui` library + thin desktop/android hosts), data views/actions, AI BYOK explain, legacy/decoders + export, Android packaging + DeviceLink wiring, live-verify harness.
+- Task 14 (continuous improvement loop) in progress: backlog refreshed from the SDD ledger, first cycle applied to the quiet-hours doc accuracy item. Backlog and this handoff were seeded on `main` (commits `00d7afec`, `4f66e5d`) and carried into the worktree.
+- Full deferred/open ledger: `docs/improvement-backlog.md`. Authoritative rulings: `.superpowers/sdd/2026-11-22-openwatch/progress.md`.
 
-**Python live sweep** — cwd `/media/mint/WDC_WD10EZRX_932G/watch`, python `/tmp/opencode/venv/bin/python`:
+## Commands
+
+From the worktree root `/media/mint/WDC_WD10EZRX_932G/watch/OpenWatch/.worktrees/openwatch-impl`:
+
+- Format check: `cargo fmt --all -- --check`
+- Tests: `cargo test --workspace`
+- Lint: `cargo clippy --workspace -- -D warnings`
+- UI-only tests: `cargo test -p openwatch-ui`
+- Live harness (ignored by default, env-gated): `cargo test -p openwatch-core --test verify -- --ignored`
+- Commit (Task 14): `git add docs && git commit -m "docs: improvement backlog and first cycle"`
+
+## Known CI-only / device-only gaps (cannot be verified from this host)
+
+- macOS/Windows CI runners: 3-OS matrix first exercised on push; not runnable locally.
+- Android typecheck / Gradle / AAB: no NDK, Skia timeout, JDK-21 D8 failure locally; JNI code typechecked offline only.
+- JNI BLE runtime-permission handshake: device-only; permission request before btleplug adapter creation unverified on hardware.
+- Android AAB install + R8 keep rules + BLE subscribe: device-only.
+- macOS UUID device key: CoreBluetooth per-host UUID; advertised-name match unverified on real macOS.
+- Task 13 live sweep: pending hardware — `hci0` was DOWN and watch not advertising at last check; harness is `#[ignore]` + env-gated.
+
+## Python live sweep — cwd `/media/mint/WDC_WD10EZRX_932G/watch`, python `/tmp/opencode/venv/bin/python`
+
 - `hciconfig hci0` → `UP RUNNING`; else `sudo -n rfkill unblock bluetooth && sudo -n hciconfig hci0 up`
-- presence (8 s): `timeout 30 /tmp/opencode/venv/bin/python -c 'import asyncio; from bleak import BleakScanner; from fireboltt_client import ADDR; print(ADDR.lower() in [a.address.lower() for a in asyncio.run(BleakScanner.discover(timeout=8))])'`
-- sweep: `/tmp/opencode/venv/bin/python fireboltt_sweep.py` → `fireboltt_sweep_<ts>.json`
-- weather responder: `/tmp/opencode/venv/bin/python fireboltt_weatherd.py 90 --cond sunny --temp 28 --city DELHI`
+- Presence (8 s): `timeout 30 /tmp/opencode/venv/bin/python -c 'import asyncio; from bleak import BleakScanner; from fireboltt_client import ADDR; print(ADDR.lower() in [a.address.lower() for a in asyncio.run(BleakScanner.discover(timeout=8))])'`
+- Sweep: `/tmp/opencode/venv/bin/python fireboltt_sweep.py` → `fireboltt_sweep_<ts>.json`
+- Weather responder: `/tmp/opencode/venv/bin/python fireboltt_weatherd.py 90 --cond sunny --temp 28 --city DELHI`
+
+## Resume after interruption
+
+1. Read `.superpowers/sdd/2026-11-22-openwatch/progress.md` (ledger) and `docs/improvement-backlog.md`.
+2. Work in the worktree on `openwatch-impl`; do not commit to `main`.
+3. Pick the top `Open` row, implement → test → update backlog + changelog → commit.
+4. At branch finish, merge `openwatch-impl` into `main` so the doc-only commits coexist (different files, no expected conflict).

@@ -1,0 +1,4 @@
+// Plugin versions and repositories live in settings.gradle.
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}

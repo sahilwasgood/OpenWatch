@@ -1,0 +1,101 @@
+// OpenWatch visual language: zinc/neutral ramp, one cool blue accent,
+// status green/amber/red. Glass is reserved for chrome and cards; numbers
+// and long text sit on near-opaque content surfaces.
+
+export global Theme {
+    // Zinc ramp. Dark-mode values are the primary palette.
+    out property <color> zinc-950: #09090b;
+    out property <color> zinc-900: #18181b;
+    out property <color> zinc-800: #27272a;
+    out property <color> zinc-700: #3f3f46;
+    out property <color> zinc-500: #71717a;
+    out property <color> zinc-400: #a1a1aa;
+    out property <color> zinc-200: #e4e4e7;
+    out property <color> zinc-100: #f4f4f5;
+
+    out property <color> text-primary: #f4f4f5;
+    out property <color> text-secondary: #a1a1aa;
+
+    // The single accent: cool blue.
+    out property <color> accent: #0a84ff;
+
+    // Status colors appear on surfaces, never as label text on their own.
+    out property <color> status-good: #30d158;
+    out property <color> status-warn: #ff9f0a;
+    out property <color> status-bad: #ff453a;
+
+    // Glass for chrome/cards: light rgba(255,255,255,.22), dark rgba(28,28,30,.6).
+    out property <color> glass-card-dark: #1c1c1e99;
+    out property <color> glass-card-light: #ffffff38;
+    out property <color> card-edge: #ffffff1a;
+    out property <length> glass-blur: 20px;
+
+    // Near-opaque surfaces for tabular numbers and long text.
+    out property <color> content-surface: #09090bee;
+
+    // Radii: 14 / 24 / 28--36 px.
+    out property <length> radius-sm: 14px;
+    out property <length> radius-md: 24px;
+    out property <length> radius-lg: 28px;
+    out property <length> radius-xl: 36px;
+
+    // 4 pt spacing base.
+    out property <length> space-unit: 4px;
+    out property <length> space-2: 8px;
+    out property <length> space-3: 12px;
+    out property <length> space-6: 24px;
+
+    // Motion: 250 ms state changes, 120 ms press.
+    out property <duration> motion-standard: 250ms;
+    out property <duration> motion-press: 120ms;
+
+    // Type scale 11/13/15/17/22/34 pt. Tabular numerals: use a font whose
+    // figures share one advance width so columns of digits line up.
+    out property <length> font-hero: 34px;
+    out property <length> font-title: 22px;
+    out property <length> font-section: 17px;
+    out property <length> font-body: 15px;
+    out property <length> font-caption: 13px;
+    out property <length> font-micro: 11px;
+    out property <string> numeral-font: "Inter Tight, SF Pro Text, Menlo, monospace";
+
+    // Accessibility fallbacks.
+    // reduced-transparency: every glass surface falls back to this solid token.
+    out property <color> solid-surface: #18181b;
+    // reduced-motion: short cross-fade instead of the full 250 ms transition.
+    out property <duration> reduced-motion-crossfade: 80ms;
+    // high-contrast / forced-colors: visible border token.
+    out property <color> high-contrast-border: #f4f4f5;
+}
+
+// Shared navigation model. Kept in the theme module so every destination
+// surface can import it without a circular .slint import.
+export global Navigation {
+    out property <[string]> destinations: ["Today", "Device", "Workbench", "Data"];
+}
+
+// Glass card with a real solid fallback. The solid rectangle is always
+// painted; when backdrop-blur is unsupported or transparency is reduced the
+// readable solid surface remains.
+export component GlassCard inherits Rectangle {
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <length> card-radius: Theme.radius-md;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.solid-surface;
+        border-radius: root.card-radius;
+    }
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        visible: !root.reduced-transparency;
+        background: Theme.glass-card-dark;
+        border-radius: root.card-radius;
+        border-width: root.high-contrast ? 2px : 1px;
+        border-color: root.high-contrast ? Theme.high-contrast-border : Theme.card-edge;
+        backdrop-blur: Theme.glass-blur;
+    }
+}

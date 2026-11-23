@@ -1,0 +1,527 @@
+// OpenWatch desktop/Android shell: four destinations, no nested maze.
+import { Theme, GlassCard, Navigation } from "theme.slint";
+import { TodaySurface, CardView } from "today.slint";
+import { DeviceSurface, RowView } from "device.slint";
+import { WorkbenchSurface, FrameView, ActionView } from "workbench.slint";
+import { DataSurface } from "data.slint";
+
+// Today and Device panes reuse the shell chrome and short cross-fade, then
+// hand their content area to the dedicated surface components.
+component TodayPane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <[CardView]> cards: [];
+    callback reorder(string, int);
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6;
+        text: "Today";
+        color: Theme.text-primary;
+        font-size: Theme.font-title;
+        font-weight: 600;
+    }
+    TodaySurface {
+        y: 56px;
+        width: 100%;
+        height: parent.height - 56px;
+        cards: root.cards;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+        reorder(key, delta) => { root.reorder(key, delta); }
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+component DevicePane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <[RowView]> rows: [];
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6;
+        text: "Device";
+        color: Theme.text-primary;
+        font-size: Theme.font-title;
+        font-weight: 600;
+    }
+    DeviceSurface {
+        y: 56px;
+        width: 100%;
+        height: parent.height - 56px;
+        rows: root.rows;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+component WorkbenchPane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <[FrameView]> frames: [];
+    in property <[ActionView]> actions: [];
+    in property <int> selected-frame: -1;
+    in property <string> selected-time: "";
+    in property <string> selected-direction: "";
+    in property <string> selected-cmd: "";
+    in property <string> selected-opcode: "";
+    in property <string> selected-confidence: "";
+    in property <string> selected-hex: "";
+    in-out property <string> note: "";
+    in-out property <string> endpoint: "";
+    in-out property <string> key: "";
+    in property <bool> has-key: false;
+    in property <string> preview: "";
+    in property <string> explanation: "";
+    in property <string> status: "";
+    in property <string> pending: "";
+    in property <string> confirmed: "";
+    callback select-frame(int);
+    callback key-edited(string);
+    callback preview-payload();
+    callback explain-frame();
+    callback request-action(string);
+    callback confirm-action();
+    callback cancel-action();
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    WorkbenchSurface {
+        width: 100%;
+        height: 100%;
+        frames: root.frames;
+        actions: root.actions;
+        selected-frame: root.selected-frame;
+        selected-time: root.selected-time;
+        selected-direction: root.selected-direction;
+        selected-cmd: root.selected-cmd;
+        selected-opcode: root.selected-opcode;
+        selected-confidence: root.selected-confidence;
+        selected-hex: root.selected-hex;
+        note <=> root.note;
+        endpoint <=> root.endpoint;
+        key <=> root.key;
+        has-key: root.has-key;
+        preview: root.preview;
+        explanation: root.explanation;
+        status: root.status;
+        pending: root.pending;
+        confirmed: root.confirmed;
+        select-frame(id) => { root.select-frame(id); }
+        key-edited(text) => { root.key-edited(text); }
+        preview-payload() => { root.preview-payload(); }
+        explain-frame() => { root.explain-frame(); }
+        request-action(key) => { root.request-action(key); }
+        confirm-action() => { root.confirm-action(); }
+        cancel-action() => { root.cancel-action(); }
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+component DataPane inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+    in property <[string]> series-keys: [];
+    in property <[float]> points: [];
+    in property <[string]> point-values: [];
+    in property <int> selected-series: 0;
+    in property <string> series-summary: "";
+    in property <string> preview: "";
+    in property <string> status: "";
+    in property <bool> pending-delete: false;
+    in property <string> units: "metric";
+    callback select-series(int);
+    callback export-json();
+    callback export-csv();
+    callback request-delete();
+    callback confirm-delete();
+    callback cancel-delete();
+    callback toggle-units();
+
+    opacity: root.active ? 1 : 0;
+    visible: root.opacity > 0;
+
+    GlassCard {
+        width: 100%;
+        height: 100%;
+        card-radius: Theme.radius-lg;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+    }
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6;
+        text: "Data";
+        color: Theme.text-primary;
+        font-size: Theme.font-title;
+        font-weight: 600;
+    }
+    DataSurface {
+        y: 56px;
+        width: 100%;
+        height: parent.height - 56px;
+        series-keys: root.series-keys;
+        points: root.points;
+        point-values: root.point-values;
+        selected-series: root.selected-series;
+        series-summary: root.series-summary;
+        preview: root.preview;
+        status: root.status;
+        pending-delete: root.pending-delete;
+        units: root.units;
+        select-series(i) => { root.select-series(i); }
+        export-json() => { root.export-json(); }
+        export-csv() => { root.export-csv(); }
+        request-delete() => { root.request-delete(); }
+        confirm-delete() => { root.confirm-delete(); }
+        cancel-delete() => { root.cancel-delete(); }
+        toggle-units() => { root.toggle-units(); }
+    }
+    animate opacity {
+        duration: Theme.reduced-motion-crossfade;
+        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+export component AppWindow inherits Window {
+    // State applied by the Rust bridge.
+    in-out property <string> device-name: "—";
+    in-out property <int> battery: -1;
+    in-out property <string> connection-state: "idle";
+    in-out property <string> last-sync: "never";
+    in-out property <bool> syncing: false;
+    in-out property <int> active-tab: 0;
+    in-out property <[CardView]> metric-cards: [];
+    in-out property <[RowView]> device-values: [];
+    callback reorder-card(string, int);
+    callback sync-now();
+
+    // Workbench raw inspector and opt-in AI panel.
+    in-out property <[FrameView]> frames: [];
+    in-out property <[ActionView]> actions: [];
+    in-out property <int> selected-frame: -1;
+    in-out property <string> selected-time: "";
+    in-out property <string> selected-direction: "";
+    in-out property <string> selected-cmd: "";
+    in-out property <string> selected-opcode: "";
+    in-out property <string> selected-confidence: "";
+    in-out property <string> selected-hex: "";
+    in-out property <string> wb-note: "";
+    in-out property <string> wb-endpoint: "";
+    in-out property <string> wb-key: "";
+    in-out property <bool> wb-has-key: false;
+    in-out property <string> wb-preview: "";
+    in-out property <string> wb-explanation: "";
+    in-out property <string> wb-status: "";
+    in-out property <string> wb-pending: "";
+    in-out property <string> wb-confirmed: "";
+    callback select-frame(int);
+    callback key-edited(string);
+    callback preview-payload();
+    callback explain-frame();
+    callback request-action(string);
+    callback confirm-action();
+    callback cancel-action();
+
+    // Data surface: local history, export, delete and units.
+    in-out property <[string]> data-series: [];
+    in-out property <[float]> data-points: [];
+    in-out property <[string]> data-point-values: [];
+    in-out property <int> data-selected-series: 0;
+    in-out property <string> data-series-summary: "No history yet";
+    in-out property <string> data-preview: "";
+    in-out property <string> data-status: "Local store · nothing leaves this device";
+    in-out property <bool> data-pending-delete: false;
+    in-out property <string> data-units: "metric";
+    callback select-data-series(int);
+    callback export-json();
+    callback export-csv();
+    callback request-delete();
+    callback confirm-delete();
+    callback cancel-delete();
+    callback toggle-units();
+
+    // Accessibility toggles (Slint 1.19 has no system detection for these).
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
+
+    // The four navigation destinations, exposed for the generated-type test.
+    out property <[string]> navigation-destinations: Navigation.destinations;
+
+    // Status color is derived from the bridge label; the text label remains
+    // visible so color is never the only signal.
+    out property <color> status-color:
+        root.connection-state == "connected" ? Theme.status-good :
+        (root.connection-state == "reconnecting" || root.connection-state == "scanning" || root.connection-state == "connecting") ? Theme.status-warn :
+        root.connection-state == "not found" ? Theme.status-bad :
+        Theme.text-secondary;
+
+    width: 1040px;
+    height: 720px;
+    title: "OpenWatch";
+    background: Theme.zinc-950;
+
+    // Sidebar chrome: solid base plus an optional glass layer.
+    Rectangle {
+        width: 220px;
+        height: 100%;
+        background: Theme.solid-surface;
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            visible: !root.reduced-transparency;
+            background: Theme.glass-card-dark;
+            backdrop-blur: Theme.glass-blur;
+        }
+        Rectangle {
+            x: 219px;
+            width: 1px;
+            height: 100%;
+            background: Theme.card-edge;
+        }
+        Text {
+            x: Theme.space-6;
+            y: Theme.space-6;
+            text: "OpenWatch";
+            color: Theme.text-primary;
+            font-size: Theme.font-title;
+            font-weight: 700;
+        }
+        for destination[i] in Navigation.destinations: Rectangle {
+            x: Theme.space-3;
+            y: 88px + i * 52px;
+            width: 196px;
+            height: 44px;
+            background: root.active-tab == i ? Theme.accent : transparent;
+            border-radius: Theme.radius-sm;
+            animate background {
+                duration: Theme.motion-standard;
+                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            Text {
+                x: Theme.space-3;
+                y: (parent.height - self.height) / 2;
+                text: destination;
+                // Near-black on the #0a84ff accent fill is 5.46:1 (design §6
+                // requires ≥4.5:1); white text there was only ~3.3:1.
+                color: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
+                font-size: Theme.font-body;
+            }
+            TouchArea {
+                clicked => {
+                    root.active-tab = i;
+                }
+            }
+        }
+    }
+
+    // Connection strip: device, battery, state, last sync and primary action.
+    Rectangle {
+        x: 232px;
+        y: 16px;
+        width: root.width - 248px;
+        height: 56px;
+        GlassCard {
+            width: 100%;
+            height: 100%;
+            card-radius: Theme.radius-md;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+        }
+        Text {
+            x: Theme.space-6;
+            y: 16px;
+            text: root.device-name;
+            color: Theme.text-primary;
+            font-size: Theme.font-body;
+            font-weight: 600;
+        }
+        // Numbers sit on a near-opaque content surface above the glass.
+        Rectangle {
+            x: parent.width - 440px;
+            y: 12px;
+            width: 88px;
+            height: 32px;
+            background: Theme.content-surface;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: Theme.space-3;
+                y: (parent.height - self.height) / 2;
+                text: root.battery >= 0 ? "\{root.battery}%" : "—";
+                color: Theme.text-primary;
+                font-size: Theme.font-caption;
+                font-family: Theme.numeral-font;
+            }
+        }
+        Rectangle {
+            x: parent.width - 340px;
+            y: 24px;
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: root.status-color;
+            animate background {
+                duration: Theme.motion-standard;
+                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+        }
+        Text {
+            x: parent.width - 324px;
+            y: 16px;
+            text: root.connection-state;
+            color: root.high-contrast ? Theme.text-primary : root.status-color;
+            font-size: Theme.font-caption;
+        }
+        Text {
+            x: parent.width - 240px;
+            y: 16px;
+            text: "Synced \{root.last-sync}";
+            color: Theme.text-secondary;
+            font-size: Theme.font-caption;
+        }
+        // Primary action: 120 ms press feedback.
+        Rectangle {
+            x: parent.width - 150px;
+            y: 12px;
+            width: 110px;
+            height: 32px;
+            background: root.syncing ? Theme.content-surface :
+                (sync-touch.pressed ? Theme.accent : Theme.glass-card-dark);
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            animate background {
+                duration: Theme.motion-press;
+                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+            }
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.syncing ? "Syncing…" : "Sync now";
+                color: root.syncing ? Theme.text-secondary : Theme.text-primary;
+                font-size: Theme.font-caption;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            sync-touch := TouchArea {
+                enabled: !root.syncing;
+                clicked => { root.sync-now(); }
+            }
+        }
+    }
+
+    // Content area: one pane per destination, stacked for cross-fade.
+    Rectangle {
+        x: 232px;
+        y: 88px;
+        width: root.width - 248px;
+        height: root.height - 104px;
+        TodayPane {
+            active: root.active-tab == 0;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            cards: root.metric-cards;
+            reorder(key, delta) => { root.reorder-card(key, delta); }
+        }
+        DevicePane {
+            active: root.active-tab == 1;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            rows: root.device-values;
+        }
+        WorkbenchPane {
+            active: root.active-tab == 2;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            frames: root.frames;
+            actions: root.actions;
+            selected-frame: root.selected-frame;
+            selected-time: root.selected-time;
+            selected-direction: root.selected-direction;
+            selected-cmd: root.selected-cmd;
+            selected-opcode: root.selected-opcode;
+            selected-confidence: root.selected-confidence;
+            selected-hex: root.selected-hex;
+            note <=> root.wb-note;
+            endpoint <=> root.wb-endpoint;
+            key <=> root.wb-key;
+            has-key: root.wb-has-key;
+            preview: root.wb-preview;
+            explanation: root.wb-explanation;
+            status: root.wb-status;
+            pending: root.wb-pending;
+            confirmed: root.wb-confirmed;
+            select-frame(id) => { root.select-frame(id); }
+            key-edited(text) => { root.key-edited(text); }
+            preview-payload() => { root.preview-payload(); }
+            explain-frame() => { root.explain-frame(); }
+            request-action(key) => { root.request-action(key); }
+            confirm-action() => { root.confirm-action(); }
+            cancel-action() => { root.cancel-action(); }
+        }
+        DataPane {
+            active: root.active-tab == 3;
+            reduced-transparency: root.reduced-transparency;
+            high-contrast: root.high-contrast;
+            series-keys: root.data-series;
+            points: root.data-points;
+            point-values: root.data-point-values;
+            selected-series: root.data-selected-series;
+            series-summary: root.data-series-summary;
+            preview: root.data-preview;
+            status: root.data-status;
+            pending-delete: root.data-pending-delete;
+            units: root.data-units;
+            select-series(i) => { root.select-data-series(i); }
+            export-json() => { root.export-json(); }
+            export-csv() => { root.export-csv(); }
+            request-delete() => { root.request-delete(); }
+            confirm-delete() => { root.confirm-delete(); }
+            cancel-delete() => { root.cancel-delete(); }
+            toggle-units() => { root.toggle-units(); }
+        }
+    }
+}
