@@ -5,6 +5,7 @@
 //! `ValueNotification`'s payload becomes one `Vec<u8>` item.
 
 use std::pin::Pin;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use btleplug::api::{
@@ -76,10 +77,27 @@ fn warn_stop_scan_failure(error: btleplug::Error) {
     tracing::warn!(?error, "failed to stop BLE scan after device discovery");
 }
 
+/// BlueZ can reject `Connect` briefly after `StopDiscovery` with
+/// `org.bluez.Error.InProgress`. Retry only that transient condition.
+fn is_connect_in_progress(error: &btleplug::Error) -> bool {
+    let message = format!("{error:?} {error}").to_lowercase();
+    message.contains("inprogress") || message.contains("in progress")
+}
+
 #[async_trait]
 impl BleTransport for BtleplugTransport {
     async fn connect(&mut self, key: &DeviceKey) -> Result<(), BleError> {
-        self.adapter.start_scan(ScanFilter::default()).await?;
+        let mut scan_retries = 0;
+        loop {
+            match self.adapter.start_scan(ScanFilter::default()).await {
+                Ok(()) => break,
+                Err(error) if scan_retries < 2 && is_connect_in_progress(&error) => {
+                    scan_retries += 1;
+                    tokio::time::sleep(Duration::from_millis(200 * scan_retries as u64)).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
         let peripherals = self.adapter.peripherals().await?;
 
         let peripheral = match key {
@@ -109,7 +127,20 @@ impl BleTransport for BtleplugTransport {
             warn_stop_scan_failure(error);
         }
 
-        peripheral.connect().await?;
+        let mut retries = 0;
+        loop {
+            match peripheral.connect().await {
+                Ok(()) => break,
+                Err(error) => {
+                    if retries < 2 && is_connect_in_progress(&error) {
+                        retries += 1;
+                        tokio::time::sleep(Duration::from_millis(200 * retries as u64)).await;
+                        continue;
+                    }
+                    return Err(error.into());
+                }
+            }
+        }
         peripheral.discover_services().await?;
 
         let watch_service = uuid_from_u16(SERVICE_WATCH);
@@ -187,6 +218,17 @@ mod tests {
         }
         fn enter(&self, _span: &tracing::span::Id) {}
         fn exit(&self, _span: &tracing::span::Id) {}
+    }
+
+    #[test]
+    fn in_progress_errors_are_detected_but_other_errors_are_not() {
+        let transient = btleplug::Error::Other(
+            "D-Bus error: org.bluez.Error.InProgress (Operation already in progress)".into(),
+        );
+        assert!(is_connect_in_progress(&transient));
+        assert!(!is_connect_in_progress(&btleplug::Error::NotSupported(
+            "test".into()
+        )));
     }
 
     #[test]
