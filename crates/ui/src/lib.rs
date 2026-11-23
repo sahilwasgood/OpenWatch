@@ -111,6 +111,36 @@ fn run_with_opts(
         state.apply_cards(&view);
     });
 
+    // Today's Control is step one; only the sheet's Confirm step writes.
+    {
+        let app = state.clone();
+        let view = window.clone_strong();
+        window.on_open_control_sheet(move |index| {
+            let mut app = app.borrow_mut();
+            app.open_control_sheet(index as usize);
+            app.apply_control_sheet(&view);
+        });
+    }
+    {
+        let app = state.clone();
+        let view = window.clone_strong();
+        window.on_close_control_sheet(move || {
+            let mut app = app.borrow_mut();
+            app.close_control_sheet();
+            app.apply_control_sheet(&view);
+        });
+    }
+    {
+        let app = state.clone();
+        let view = window.clone_strong();
+        window.on_confirm_control_action(move || {
+            let mut app = app.borrow_mut();
+            let _ = app.confirm_control_action();
+            app.apply_cards(&view);
+            app.apply_control_sheet(&view);
+        });
+    }
+
     {
         let shared = workbench.clone();
         let view = window.clone_strong();
@@ -528,5 +558,89 @@ mod tests {
             shell.contains("data-series"),
             "shell lost Data history wiring"
         );
+    }
+
+    #[test]
+    fn today_control_two_step_confirm_writes_exact_goal_frame() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        use openwatch_core::protocol::frame::Frame;
+
+        #[derive(Debug)]
+        struct RecordingLink(Rc<RefCell<Vec<Vec<u8>>>>);
+
+        impl DeviceLink for RecordingLink {
+            fn query(&self, _cmd: u8, _payload: &[u8], _wait_ms: u64) -> Result<Frame, AppError> {
+                Err(AppError::NoLink)
+            }
+            fn write(&self, frame: &[u8]) -> Result<(), AppError> {
+                self.0.borrow_mut().push(frame.to_vec());
+                Ok(())
+            }
+            fn battery(&self) -> Option<u8> {
+                None
+            }
+        }
+
+        let writes = Rc::new(RefCell::new(Vec::new()));
+        let mut state = AppState::with_link(RecordingLink(writes.clone()), bridge::system_now);
+        state.cards.push(Reading {
+            key: "goals-steps",
+            group: "Today",
+            title: "Step goal",
+            value: "8000".into(),
+            detail: "Daily goal stored on the watch",
+            updated_at: "2026-11-22 14:03 UTC".into(),
+        });
+
+        // First click arms the control and opens the sheet; it must not write.
+        assert!(
+            state.open_control_sheet(0),
+            "a goal card must expose a control"
+        );
+        assert!(state.control_sheet_open(), "sheet must open on first click");
+        assert!(writes.borrow().is_empty(), "arming a control wrote a frame");
+
+        // Second click confirms the armed action and writes the exact frame.
+        state.confirm_control_action().unwrap();
+        assert!(
+            !state.control_sheet_open(),
+            "sheet must close after confirm"
+        );
+        let recorded = writes.borrow();
+        assert_eq!(recorded.len(), 1, "confirm must write exactly one frame");
+        let hex: String = recorded[0]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(hex, "feea20091600001f40");
+    }
+
+    #[test]
+    fn only_l_verified_cards_advertise_a_control() {
+        assert!(AppState::card_writable("goals-steps"));
+        assert!(AppState::card_writable("heart-rate"));
+        for key in ["battery", "steps", "stress", "move-reminders"] {
+            assert!(!AppState::card_writable(key), "{key} has no write mapping");
+        }
+        let today = include_str!("../ui/today.slint");
+        assert!(
+            today.contains("if card.writable"),
+            "control must be gated on the write mapping"
+        );
+        assert!(
+            !today.contains("☰ Control"),
+            "inert control decoy is still present"
+        );
+        let shell = include_str!("../ui/app-window.slint");
+        for token in [
+            "control-sheet-open",
+            "open-control-sheet",
+            "close-control-sheet",
+            "confirm-control-action",
+        ] {
+            assert!(shell.contains(token), "shell lost {token}");
+        }
     }
 }

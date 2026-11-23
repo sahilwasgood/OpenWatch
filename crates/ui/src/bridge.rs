@@ -120,6 +120,9 @@ pub struct AppState {
     pub cards: Vec<Reading>,
     /// Device identity, settings, apps, alarms, goals and faces.
     pub device_values: Vec<Reading>,
+    /// Two-step control sheet: the first click arms, the second writes.
+    control_sheet_open: bool,
+    armed_action: Option<Action>,
     link: Option<Box<dyn DeviceLink>>,
     store: Option<Store>,
     now: fn() -> i64,
@@ -147,6 +150,8 @@ impl Default for AppState {
             last_sync: None,
             cards: Vec::new(),
             device_values: Vec::new(),
+            control_sheet_open: false,
+            armed_action: None,
             link: None,
             store: None,
             now: system_now,
@@ -253,6 +258,24 @@ pub const REFRESH_WAIT_MS: u64 = 150;
 /// Uppercase hex of the exact bytes put on (or received from) the wire.
 fn hex_of(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02X}")).collect()
+}
+
+/// L-verified write mappings for human-readable readings. A reading with no
+/// mapping must not advertise a Control affordance.
+fn action_for(reading: &Reading) -> Option<Action> {
+    match reading.key {
+        "goals-steps" => Some(Action::SetGoal(reading.value.parse().ok()?)),
+        "heart-rate" => Some(Action::StartHr),
+        _ => None,
+    }
+}
+
+fn action_label(action: &Action) -> String {
+    match action {
+        Action::SetGoal(steps) => format!("Set the daily step goal to {steps}."),
+        Action::StartHr => "Start a live heart-rate reading on the watch.".to_string(),
+        _ => "Write this setting to the watch.".to_string(),
+    }
 }
 
 impl AppState {
@@ -679,6 +702,53 @@ impl AppState {
         Ok(())
     }
 
+    /// First step: arm the control for the card at `index`. Opens the
+    /// confirmation sheet but writes nothing until the second click.
+    pub fn open_control_sheet(&mut self, index: usize) -> bool {
+        let Some(action) = self.cards.get(index).and_then(action_for) else {
+            return false;
+        };
+        self.armed_action = Some(action);
+        self.control_sheet_open = true;
+        true
+    }
+
+    /// Dismiss the sheet without writing.
+    pub fn close_control_sheet(&mut self) {
+        self.armed_action = None;
+        self.control_sheet_open = false;
+    }
+
+    /// Second step: send the armed action through the device link and close
+    /// the sheet. A confirm without a prior arm is a no-op.
+    pub fn confirm_control_action(&mut self) -> Result<(), AppError> {
+        let Some(action) = self.armed_action.take() else {
+            self.control_sheet_open = false;
+            return Ok(());
+        };
+        self.control_sheet_open = false;
+        self.act(action)
+    }
+
+    pub fn control_sheet_open(&self) -> bool {
+        self.control_sheet_open
+    }
+
+    /// True when the reading key has an L-verified write mapping.
+    pub fn card_writable(key: &str) -> bool {
+        matches!(key, "goals-steps" | "heart-rate")
+    }
+
+    pub(crate) fn apply_control_sheet(&self, window: &AppWindow) {
+        window.set_control_sheet_open(self.control_sheet_open);
+        let label = self
+            .armed_action
+            .as_ref()
+            .map(action_label)
+            .unwrap_or_default();
+        window.set_control_sheet_label(SharedString::from(label.as_str()));
+    }
+
     pub(crate) fn apply_to(&self, window: &AppWindow, options: &UiOptions) {
         window.set_device_name(SharedString::from(self.device_name.as_str()));
         window.set_battery(self.battery as i32);
@@ -690,6 +760,7 @@ impl AppState {
         window.set_high_contrast(options.high_contrast);
         self.apply_cards(window);
         self.apply_device_values(window);
+        self.apply_control_sheet(window);
     }
 
     pub(crate) fn apply_cards(&self, window: &AppWindow) {
@@ -702,6 +773,7 @@ impl AppState {
                 value: SharedString::from(value.value.as_str()),
                 detail: SharedString::from(value.detail),
                 updated_at: SharedString::from(value.updated_at.as_str()),
+                writable: Self::card_writable(value.key),
             })
             .collect();
         window.set_metric_cards(ModelRc::new(VecModel::from(cards)));

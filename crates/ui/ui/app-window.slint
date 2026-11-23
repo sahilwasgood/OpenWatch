@@ -13,6 +13,7 @@ component TodayPane inherits Rectangle {
     in property <bool> high-contrast: false;
     in property <[CardView]> cards: [];
     callback reorder(string, int);
+    callback open-control(int);
 
     opacity: root.active ? 1 : 0;
     visible: root.opacity > 0;
@@ -40,6 +41,7 @@ component TodayPane inherits Rectangle {
         reduced-transparency: root.reduced-transparency;
         high-contrast: root.high-contrast;
         reorder(key, delta) => { root.reorder(key, delta); }
+        open-control(index) => { root.open-control(index); }
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
@@ -238,6 +240,14 @@ export component AppWindow inherits Window {
     in-out property <[RowView]> device-values: [];
     callback reorder-card(string, int);
     callback sync-now();
+
+    // Two-step write confirmation. The first click on a card's Control arms
+    // the action; only the sheet's Confirm calls AppState::act.
+    in-out property <bool> control-sheet-open: false;
+    in-out property <string> control-sheet-label: "";
+    callback open-control-sheet(int);
+    callback close-control-sheet();
+    callback confirm-control-action();
 
     // Workbench raw inspector and opt-in AI panel.
     in-out property <[FrameView]> frames: [];
@@ -465,6 +475,7 @@ export component AppWindow inherits Window {
             high-contrast: root.high-contrast;
             cards: root.metric-cards;
             reorder(key, delta) => { root.reorder-card(key, delta); }
+            open-control(index) => { root.open-control-sheet(index); }
         }
         DevicePane {
             active: root.active-tab == 1;
@@ -522,6 +533,88 @@ export component AppWindow inherits Window {
             confirm-delete() => { root.confirm-delete(); }
             cancel-delete() => { root.cancel-delete(); }
             toggle-units() => { root.toggle-units(); }
+        }
+    }
+
+    // Modal confirmation. The dim layer absorbs clicks outside the panel so a
+    // stale control cannot be armed twice; Cancel arms nothing and writes nothing.
+    if root.control-sheet-open: Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: #000000aa;
+        TouchArea {
+            clicked => { root.close-control-sheet(); }
+        }
+        Rectangle {
+            x: (parent.width - 400px) / 2;
+            y: (parent.height - 208px) / 2;
+            width: 400px;
+            height: 208px;
+            background: Theme.solid-surface;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            Text {
+                x: Theme.space-6;
+                y: Theme.space-6;
+                text: "Confirm control";
+                color: Theme.text-primary;
+                font-size: Theme.font-section;
+                font-weight: 600;
+            }
+            Text {
+                x: Theme.space-6;
+                y: 60px;
+                width: parent.width - Theme.space-6 * 2;
+                text: root.control-sheet-label;
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                x: Theme.space-6;
+                y: parent.height - 64px;
+                width: 164px;
+                height: 44px;
+                background: Theme.zinc-800;
+                border-radius: Theme.radius-sm;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: "Cancel";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-caption;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                cancel-touch := TouchArea {
+                    clicked => { root.close-control-sheet(); }
+                }
+            }
+            Rectangle {
+                x: parent.width - 188px;
+                y: parent.height - 64px;
+                width: 164px;
+                height: 44px;
+                background: Theme.accent;
+                opacity: confirm-touch.pressed ? 0.8 : 1;
+                border-radius: Theme.radius-sm;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: "Confirm";
+                    color: Theme.zinc-950;
+                    font-size: Theme.font-caption;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                confirm-touch := TouchArea {
+                    clicked => { root.confirm-control-action(); }
+                }
+            }
         }
     }
 }
