@@ -25,6 +25,18 @@ use data_surface::DataView;
 use data_view::WorkbenchData;
 pub use link::{connect_watch, ConnectionLink};
 
+impl UiOptions {
+    /// Flip the in-app reduced-transparency switch.
+    pub fn toggle_reduced_transparency(&mut self) {
+        self.reduced_transparency = !self.reduced_transparency;
+    }
+
+    /// Flip the in-app high-contrast switch.
+    pub fn toggle_high_contrast(&mut self) {
+        self.high_contrast = !self.high_contrast;
+    }
+}
+
 /// Build, populate and run the shell with supplied state and options.
 pub fn run_with(state: AppState, options: UiOptions) -> Result<(), AppError> {
     run_with_opts(state, options, false)
@@ -39,7 +51,10 @@ fn run_with_opts(
 ) -> Result<(), AppError> {
     let window = AppWindow::new()?;
     let state = Rc::new(RefCell::new(state));
-    state.borrow().apply_to(&window, &options);
+    // One shared cell: hosts seed it, the Data pane flips it, and a refresh
+    // must not restore the pre-toggle values.
+    let options = Rc::new(RefCell::new(options));
+    state.borrow().apply_to(&window, &options.borrow());
 
     let workbench = Rc::new(RefCell::new(WorkbenchData::default()));
     window.set_wb_endpoint(slint::SharedString::from(workbench.borrow().endpoint()));
@@ -49,7 +64,7 @@ fn run_with_opts(
         wb.apply_to(&window);
     }
 
-    let sync_options = options;
+    let sync_options = options.clone();
     let sync_in_flight = Rc::new(Cell::new(false));
     let schedule_refresh: Rc<dyn Fn()> = Rc::new({
         let shared = state.clone();
@@ -72,12 +87,13 @@ fn run_with_opts(
             // the window handle is !Send and AppState owns a !Send DeviceLink;
             // this is deferral, not a non-blocking refresh. Upgrade when the
             // link is Send + Sync and results can be marshalled by a timer.
+            let opts_for_refresh = sync_options.clone();
             slint::Timer::single_shot(Duration::ZERO, move || {
                 {
                     let mut state = shared.borrow_mut();
                     let _ = state.refresh_reads();
                     state.sync_connection();
-                    state.apply_to(&view, &sync_options);
+                    state.apply_to(&view, &opts_for_refresh.borrow());
                 }
                 // The refresh logged new frames to the store: reload the raw
                 // inspector so it reads what was actually sent and received.
@@ -138,6 +154,27 @@ fn run_with_opts(
             let _ = app.confirm_control_action();
             app.apply_cards(&view);
             app.apply_control_sheet(&view);
+        });
+    }
+
+    // Data-pane accessibility switches write the same UiOptions state the host
+    // seeded, so a later refresh keeps the user's choice.
+    {
+        let opts = options.clone();
+        let view = window.clone_strong();
+        window.on_toggle_reduced_transparency(move || {
+            let mut opts = opts.borrow_mut();
+            opts.toggle_reduced_transparency();
+            view.set_reduced_transparency(opts.reduced_transparency);
+        });
+    }
+    {
+        let opts = options.clone();
+        let view = window.clone_strong();
+        window.on_toggle_high_contrast(move || {
+            let mut opts = opts.borrow_mut();
+            opts.toggle_high_contrast();
+            view.set_high_contrast(opts.high_contrast);
         });
     }
 
@@ -348,6 +385,59 @@ mod tests {
     use super::*;
     use slint::Model;
 
+    fn source(name: &str) -> &'static str {
+        match name {
+            "theme.slint" => include_str!("../ui/theme.slint"),
+            "app-window.slint" => include_str!("../ui/app-window.slint"),
+            "today.slint" => include_str!("../ui/today.slint"),
+            "device.slint" => include_str!("../ui/device.slint"),
+            "workbench.slint" => include_str!("../ui/workbench.slint"),
+            "data.slint" => include_str!("../ui/data.slint"),
+            _ => panic!("unmapped UI source: {name}"),
+        }
+    }
+
+    /// Text `color:` expressions inside an element whose own background uses
+    /// the accent fill. Indentation marks element boundaries: properties of an
+    /// element share its indent, children are deeper, and its `}` is shallower.
+    fn accent_fill_text_colors(src: &str) -> Vec<String> {
+        let lines: Vec<&str> = src.lines().collect();
+        let mut colors = Vec::new();
+        for (index, line) in lines.iter().enumerate() {
+            if !(line.contains("background:") && line.contains("Theme.accent")) {
+                continue;
+            }
+            let base_indent = line.len() - line.trim_start().len();
+            for following in &lines[index + 1..] {
+                let indent = following.len() - following.trim_start().len();
+                if indent < base_indent && following.trim_start().starts_with('}') {
+                    break;
+                }
+                for segment in following.split(';') {
+                    let segment = segment.trim();
+                    if segment.starts_with("color:") {
+                        colors.push(segment.to_string());
+                    }
+                }
+            }
+        }
+        colors
+    }
+
+    fn block_containing(lines: &[&str], index: usize) -> String {
+        let base_indent = lines[index].len() - lines[index].trim_start().len();
+        let mut block = String::new();
+        for line in &lines[index..] {
+            let indent = line.len() - line.trim_start().len();
+            if indent < base_indent && line.trim_start().starts_with('}') {
+                break;
+            }
+            block.push_str(line);
+            block.push('\n');
+        }
+        block
+    }
+
     #[derive(Debug)]
     struct OfflineLink;
 
@@ -457,6 +547,7 @@ mod tests {
             theme.contains("high-contrast-border"),
             "high-contrast border token missing"
         );
+        assert!(theme.contains("focus-ring"), "focus-ring token missing");
     }
 
     #[test]
@@ -642,5 +733,172 @@ mod tests {
         ] {
             assert!(shell.contains(token), "shell lost {token}");
         }
+    }
+
+    #[test]
+    fn every_accent_fill_uses_near_black_text() {
+        let mut inspected = 0usize;
+        for name in [
+            "app-window.slint",
+            "today.slint",
+            "device.slint",
+            "workbench.slint",
+            "data.slint",
+        ] {
+            for color in accent_fill_text_colors(source(name)) {
+                inspected += 1;
+                assert!(
+                    color.contains("Theme.zinc-950"),
+                    "{name}: text on an accent fill must be near-black, got `{color}`"
+                );
+            }
+        }
+        assert!(
+            inspected >= 5,
+            "scanner only found {inspected} accent-fill text colors"
+        );
+    }
+
+    #[test]
+    fn theme_defines_spacing_and_radius_tokens() {
+        let theme = source("theme.slint");
+        for (token, px) in [
+            ("space-unit", 4),
+            ("space-2", 8),
+            ("space-3", 12),
+            ("space-4", 16),
+            ("space-6", 24),
+            ("space-8", 32),
+            ("radius-sm", 6),
+            ("radius-md", 8),
+            ("radius-lg", 12),
+        ] {
+            assert!(
+                theme.contains(&format!("{token}: {px}px;")),
+                "theme lost {token} at {px}px"
+            );
+        }
+    }
+
+    #[test]
+    fn type_scale_keeps_interactive_labels_at_twelve_px_or_more() {
+        let theme = source("theme.slint");
+        for (token, px) in [
+            ("font-display", 24),
+            ("font-h1", 18),
+            ("font-h2", 15),
+            ("font-body", 13),
+            ("font-label", 12),
+            ("font-micro", 11),
+        ] {
+            assert!(
+                theme.contains(&format!("{token}: {px}px;")),
+                "theme lost {token} at {px}px"
+            );
+        }
+        let interactive = [
+            "Sync now",
+            "Control",
+            "↑",
+            "↓",
+            "Review",
+            "Mark reviewed",
+            "Export JSON",
+            "Export CSV",
+            "Units:",
+            "Delete all local data",
+            "Confirm",
+            "Cancel",
+            "Show payload",
+            "Explain",
+            "Reduced transparency:",
+            "High contrast:",
+        ];
+        for name in [
+            "app-window.slint",
+            "today.slint",
+            "workbench.slint",
+            "data.slint",
+        ] {
+            let lines: Vec<&str> = source(name).lines().collect();
+            for (index, line) in lines.iter().enumerate() {
+                let label = interactive
+                    .iter()
+                    .find(|label| line.contains(&format!("\"{label}")));
+                if label.is_some() || line.contains("text: destination;") {
+                    let block = block_containing(&lines, index);
+                    assert!(
+                        !block.contains("font-size: Theme.font-micro"),
+                        "{name}: interactive label `{}` uses 11px micro text",
+                        label.copied().unwrap_or("destination")
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn accessibility_switches_are_reachable_and_flip_ui_options() {
+        let mut options = UiOptions::default();
+        assert!(!options.reduced_transparency && !options.high_contrast);
+        options.toggle_reduced_transparency();
+        assert!(
+            options.reduced_transparency,
+            "reduced-transparency did not flip on"
+        );
+        options.toggle_reduced_transparency();
+        assert!(
+            !options.reduced_transparency,
+            "reduced-transparency did not flip off"
+        );
+        options.toggle_high_contrast();
+        assert!(options.high_contrast, "high-contrast did not flip on");
+
+        let data = source("data.slint");
+        for token in [
+            "toggle-reduced-transparency",
+            "toggle-high-contrast",
+            "Reduced transparency:",
+            "High contrast:",
+            "accessible-label",
+        ] {
+            assert!(data.contains(token), "Data settings lost {token}");
+        }
+        let shell = source("app-window.slint");
+        for token in [
+            "callback toggle-reduced-transparency",
+            "callback toggle-high-contrast",
+        ] {
+            assert!(shell.contains(token), "shell lost {token}");
+        }
+        let host = include_str!("lib.rs");
+        for token in ["on_toggle_reduced_transparency", "on_toggle_high_contrast"] {
+            assert!(host.contains(token), "host lost {token}");
+        }
+    }
+
+    #[test]
+    fn reorder_buttons_have_forty_pixel_hit_areas() {
+        let today = source("today.slint");
+        let region = today
+            .split("// Two explicit reorder steps")
+            .nth(1)
+            .expect("Today lost the reorder controls");
+        assert!(
+            region.matches("width: 40px;").count() >= 2,
+            "reorder hit areas are narrower than 40px"
+        );
+        assert!(
+            region.matches("height: 40px;").count() >= 2,
+            "reorder hit areas are shorter than 40px"
+        );
+        assert!(
+            region.contains("accessible-label"),
+            "reorder controls need accessible labels"
+        );
+        assert!(
+            region.contains("Theme.focus-ring"),
+            "reorder controls need a visible focus ring"
+        );
     }
 }

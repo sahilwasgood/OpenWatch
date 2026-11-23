@@ -30,7 +30,7 @@ component TodayPane inherits Rectangle {
         y: Theme.space-6;
         text: "Today";
         color: Theme.text-primary;
-        font-size: Theme.font-title;
+        font-size: Theme.font-h1;
         font-weight: 600;
     }
     TodaySurface {
@@ -70,7 +70,7 @@ component DevicePane inherits Rectangle {
         y: Theme.space-6;
         text: "Device";
         color: Theme.text-primary;
-        font-size: Theme.font-title;
+        font-size: Theme.font-h1;
         font-weight: 600;
     }
     DeviceSurface {
@@ -175,6 +175,8 @@ component DataPane inherits Rectangle {
     in property <string> status: "";
     in property <bool> pending-delete: false;
     in property <string> units: "metric";
+    callback toggle-reduced-transparency();
+    callback toggle-high-contrast();
     callback select-series(int);
     callback export-json();
     callback export-csv();
@@ -198,7 +200,7 @@ component DataPane inherits Rectangle {
         y: Theme.space-6;
         text: "Data";
         color: Theme.text-primary;
-        font-size: Theme.font-title;
+        font-size: Theme.font-h1;
         font-weight: 600;
     }
     DataSurface {
@@ -214,6 +216,10 @@ component DataPane inherits Rectangle {
         status: root.status;
         pending-delete: root.pending-delete;
         units: root.units;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+        toggle-reduced-transparency() => { root.toggle-reduced-transparency(); }
+        toggle-high-contrast() => { root.toggle-high-contrast(); }
         select-series(i) => { root.select-series(i); }
         export-json() => { root.export-json(); }
         export-csv() => { root.export-csv(); }
@@ -295,8 +301,11 @@ export component AppWindow inherits Window {
     callback toggle-units();
 
     // Accessibility toggles (Slint 1.19 has no system detection for these).
+    // Hosts seed them from UiOptions; the Data pane can flip them at runtime.
     in property <bool> reduced-transparency: false;
     in property <bool> high-contrast: false;
+    callback toggle-reduced-transparency();
+    callback toggle-high-contrast();
 
     // The four navigation destinations, exposed for the generated-type test.
     out property <[string]> navigation-destinations: Navigation.destinations;
@@ -337,7 +346,7 @@ export component AppWindow inherits Window {
             y: Theme.space-6;
             text: "OpenWatch";
             color: Theme.text-primary;
-            font-size: Theme.font-title;
+            font-size: Theme.font-h1;
             font-weight: 700;
         }
         for destination[i] in Navigation.destinations: Rectangle {
@@ -345,6 +354,8 @@ export component AppWindow inherits Window {
             y: 88px + i * 52px;
             width: 196px;
             height: 44px;
+            accessible-role: button;
+            accessible-label: "Open " + destination;
             background: root.active-tab == i ? Theme.accent : transparent;
             border-radius: Theme.radius-sm;
             animate background {
@@ -358,7 +369,7 @@ export component AppWindow inherits Window {
                 // Near-black on the #0a84ff accent fill is 5.46:1 (design §6
                 // requires ≥4.5:1); white text there was only ~3.3:1.
                 color: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
-                font-size: Theme.font-body;
+                font-size: Theme.font-label;
             }
             TouchArea {
                 clicked => {
@@ -402,7 +413,7 @@ export component AppWindow inherits Window {
                 y: (parent.height - self.height) / 2;
                 text: root.battery >= 0 ? "\{root.battery}%" : "—";
                 color: Theme.text-primary;
-                font-size: Theme.font-caption;
+                font-size: Theme.font-body;
                 font-family: Theme.numeral-font;
             }
         }
@@ -423,14 +434,14 @@ export component AppWindow inherits Window {
             y: 16px;
             text: root.connection-state;
             color: root.high-contrast ? Theme.text-primary : root.status-color;
-            font-size: Theme.font-caption;
+            font-size: Theme.font-body;
         }
         Text {
             x: parent.width - 240px;
             y: 16px;
             text: "Synced \{root.last-sync}";
             color: Theme.text-secondary;
-            font-size: Theme.font-caption;
+            font-size: Theme.font-body;
         }
         // Primary action: 120 ms press feedback.
         Rectangle {
@@ -438,11 +449,12 @@ export component AppWindow inherits Window {
             y: 12px;
             width: 110px;
             height: 32px;
-            background: root.syncing ? Theme.content-surface :
-                (sync-touch.pressed ? Theme.accent : Theme.glass-card-dark);
+            background: root.syncing ? Theme.content-surface : (sync-touch.pressed ? Theme.accent : Theme.glass-card-dark);
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.card-edge;
+            accessible-role: button;
+            accessible-label: "Sync now";
             animate background {
                 duration: Theme.motion-press;
                 easing: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -451,8 +463,8 @@ export component AppWindow inherits Window {
                 width: 100%;
                 height: 100%;
                 text: root.syncing ? "Syncing…" : "Sync now";
-                color: root.syncing ? Theme.text-secondary : Theme.text-primary;
-                font-size: Theme.font-caption;
+                color: root.syncing ? Theme.text-secondary : (sync-touch.pressed ? Theme.zinc-950 : Theme.text-primary);
+                font-size: Theme.font-label;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
@@ -526,6 +538,8 @@ export component AppWindow inherits Window {
             status: root.data-status;
             pending-delete: root.data-pending-delete;
             units: root.data-units;
+            toggle-reduced-transparency() => { root.toggle-reduced-transparency(); }
+            toggle-high-contrast() => { root.toggle-high-contrast(); }
             select-series(i) => { root.select-data-series(i); }
             export-json() => { root.export-json(); }
             export-csv() => { root.export-csv(); }
@@ -561,7 +575,7 @@ export component AppWindow inherits Window {
                 y: Theme.space-6;
                 text: "Confirm control";
                 color: Theme.text-primary;
-                font-size: Theme.font-section;
+                font-size: Theme.font-h2;
                 font-weight: 600;
             }
             Text {
@@ -580,12 +594,14 @@ export component AppWindow inherits Window {
                 height: 44px;
                 background: Theme.zinc-800;
                 border-radius: Theme.radius-sm;
+                accessible-role: button;
+                accessible-label: "Cancel control";
                 Text {
                     width: 100%;
                     height: 100%;
                     text: "Cancel";
                     color: Theme.text-primary;
-                    font-size: Theme.font-caption;
+                    font-size: Theme.font-label;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
@@ -601,12 +617,14 @@ export component AppWindow inherits Window {
                 background: Theme.accent;
                 opacity: confirm-touch.pressed ? 0.8 : 1;
                 border-radius: Theme.radius-sm;
+                accessible-role: button;
+                accessible-label: "Confirm control";
                 Text {
                     width: 100%;
                     height: 100%;
                     text: "Confirm";
                     color: Theme.zinc-950;
-                    font-size: Theme.font-caption;
+                    font-size: Theme.font-label;
                     font-weight: 600;
                     horizontal-alignment: center;
                     vertical-alignment: center;

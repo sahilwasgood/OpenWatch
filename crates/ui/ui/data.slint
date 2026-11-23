@@ -16,7 +16,11 @@ export component DataSurface inherits Rectangle {
     in property <string> status: "Local store · nothing leaves this device";
     in property <bool> pending-delete: false;
     in property <string> units: "metric";
+    in property <bool> reduced-transparency: false;
+    in property <bool> high-contrast: false;
 
+    callback toggle-reduced-transparency();
+    callback toggle-high-contrast();
     callback select-series(int);
     callback export-json();
     callback export-csv();
@@ -29,7 +33,7 @@ export component DataSurface inherits Rectangle {
         x: Theme.space-6; y: 8px;
         text: "Data · local store";
         color: Theme.text-primary;
-        font-size: Theme.font-section;
+        font-size: Theme.font-h2;
         font-weight: 600;
     }
 
@@ -42,7 +46,7 @@ export component DataSurface inherits Rectangle {
             x: Theme.space-3; y: 8px;
             text: "History · \{root.series-summary}";
             color: Theme.text-primary;
-            font-size: Theme.font-caption;
+            font-size: Theme.font-body;
             overflow: elide;
         }
         Flickable {
@@ -54,11 +58,13 @@ export component DataSurface inherits Rectangle {
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Select series " + key;
                 Text {
                     width: 100%; height: 100%;
                     text: key;
-                    color: Theme.text-primary;
-                    font-size: Theme.font-micro;
+                    color: root.selected-series == i ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     overflow: elide;
@@ -95,7 +101,7 @@ export component DataSurface inherits Rectangle {
                 x: Theme.space-3; y: (parent.height - self.height) / 2;
                 text: "No numeric readings recorded yet";
                 color: Theme.text-secondary;
-                font-size: Theme.font-caption;
+                font-size: Theme.font-body;
             }
         }
         Text {
@@ -122,7 +128,7 @@ export component DataSurface inherits Rectangle {
             x: Theme.space-3; y: 8px;
             text: "Export · JSON / CSV";
             color: Theme.text-primary;
-            font-size: Theme.font-caption;
+            font-size: Theme.font-body;
         }
         Rectangle {
             x: Theme.space-3; y: 32px; width: 108px; height: 26px;
@@ -130,9 +136,12 @@ export component DataSurface inherits Rectangle {
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.card-edge;
+            accessible-role: button;
+            accessible-label: "Export JSON";
             Text {
                 width: 100%; height: 100%; text: "Export JSON";
-                color: Theme.text-primary; font-size: Theme.font-micro;
+                color: json-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                font-size: Theme.font-label;
                 horizontal-alignment: center; vertical-alignment: center;
             }
             json-touch := TouchArea { clicked => { root.export-json(); } }
@@ -143,9 +152,12 @@ export component DataSurface inherits Rectangle {
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.card-edge;
+            accessible-role: button;
+            accessible-label: "Export CSV";
             Text {
                 width: 100%; height: 100%; text: "Export CSV";
-                color: Theme.text-primary; font-size: Theme.font-micro;
+                color: csv-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                font-size: Theme.font-label;
                 horizontal-alignment: center; vertical-alignment: center;
             }
             csv-touch := TouchArea { clicked => { root.export-csv(); } }
@@ -181,7 +193,7 @@ export component DataSurface inherits Rectangle {
             x: Theme.space-3; y: 8px;
             text: "Local store · settings";
             color: Theme.text-primary;
-            font-size: Theme.font-caption;
+            font-size: Theme.font-body;
         }
         Rectangle {
             x: Theme.space-3; y: 40px; width: 180px; height: 28px;
@@ -189,10 +201,13 @@ export component DataSurface inherits Rectangle {
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.card-edge;
+            accessible-role: button;
+            accessible-label: "Display units";
             Text {
                 width: 100%; height: 100%;
                 text: "Units: \{root.units == "imperial" ? "Imperial" : "Metric"}";
-                color: Theme.text-primary; font-size: Theme.font-micro;
+                color: units-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                font-size: Theme.font-label;
                 horizontal-alignment: center; vertical-alignment: center;
             }
             units-touch := TouchArea { clicked => { root.toggle-units(); } }
@@ -211,12 +226,58 @@ export component DataSurface inherits Rectangle {
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.card-edge;
+            accessible-role: button;
+            accessible-label: "Delete all local data";
             Text {
                 width: 100%; height: 100%; text: "Delete all local data";
-                color: Theme.text-primary; font-size: Theme.font-micro;
+                color: delete-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                font-size: Theme.font-label;
                 horizontal-alignment: center; vertical-alignment: center;
             }
             delete-touch := TouchArea { clicked => { root.request-delete(); } }
+        }
+
+        // Accessibility switches live here because Android has no OS-level
+        // reduced-transparency preference; hosts can still set the same state.
+        Rectangle {
+            x: Theme.space-3; y: 132px; width: 240px; height: 32px;
+            visible: !root.pending-delete;
+            background: root.reduced-transparency ? Theme.accent : Theme.glass-card-dark;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            accessible-role: checkbox;
+            accessible-checkable: true;
+            accessible-checked: root.reduced-transparency;
+            accessible-label: "Reduced transparency";
+            Text {
+                width: 100%; height: 100%;
+                text: "Reduced transparency: \{root.reduced-transparency ? "On" : "Off"}";
+                color: root.reduced-transparency ? Theme.zinc-950 : Theme.text-primary;
+                font-size: Theme.font-label;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+            transparency-touch := TouchArea { clicked => { root.toggle-reduced-transparency(); } }
+        }
+        Rectangle {
+            x: Theme.space-3; y: 168px; width: 240px; height: 32px;
+            visible: !root.pending-delete;
+            background: root.high-contrast ? Theme.accent : Theme.glass-card-dark;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            accessible-role: checkbox;
+            accessible-checkable: true;
+            accessible-checked: root.high-contrast;
+            accessible-label: "High contrast";
+            Text {
+                width: 100%; height: 100%;
+                text: "High contrast: \{root.high-contrast ? "On" : "Off"}";
+                color: root.high-contrast ? Theme.zinc-950 : Theme.text-primary;
+                font-size: Theme.font-label;
+                horizontal-alignment: center; vertical-alignment: center;
+            }
+            contrast-touch := TouchArea { clicked => { root.toggle-high-contrast(); } }
         }
 
         if root.pending-delete : Rectangle {
@@ -229,7 +290,7 @@ export component DataSurface inherits Rectangle {
                 x: Theme.space-3; y: 8px; width: parent.width - Theme.space-6;
                 text: "Delete every reading and frame stored locally? This cannot be undone.";
                 color: Theme.text-primary;
-                font-size: Theme.font-caption;
+                font-size: Theme.font-body;
                 wrap: word-wrap;
             }
             Rectangle {
@@ -238,9 +299,12 @@ export component DataSurface inherits Rectangle {
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Confirm delete";
                 Text {
                     width: 100%; height: 100%; text: "Confirm";
-                    color: Theme.text-primary; font-size: Theme.font-micro;
+                    color: confirm-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
                     horizontal-alignment: center; vertical-alignment: center;
                 }
                 confirm-touch := TouchArea { clicked => { root.confirm-delete(); } }
@@ -251,9 +315,12 @@ export component DataSurface inherits Rectangle {
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Cancel delete";
                 Text {
                     width: 100%; height: 100%; text: "Cancel";
-                    color: Theme.text-primary; font-size: Theme.font-micro;
+                    color: cancel-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
                     horizontal-alignment: center; vertical-alignment: center;
                 }
                 cancel-touch := TouchArea { clicked => { root.cancel-delete(); } }
