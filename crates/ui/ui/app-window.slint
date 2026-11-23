@@ -1,18 +1,84 @@
 // OpenWatch desktop/Android shell: four destinations, no nested maze.
-import { Theme, GlassCard, Navigation } from "theme.slint";
+import { Theme, GlassCard, Navigation, NavIcon, SyncIcon, ConfirmIcon } from "theme.slint";
 import { TodaySurface, CardView } from "today.slint";
 import { DeviceSurface, RowView } from "device.slint";
 import { WorkbenchSurface, FrameView, ActionView } from "workbench.slint";
 import { DataSurface } from "data.slint";
 
+// One header for all four destinations. The panes only supply a title, so the
+// type scale and inset stay identical as the window resizes.
+component PaneHeader inherits Rectangle {
+    in property <string> title;
+    height: 56px;
+    Text {
+        x: Theme.space-6;
+        y: Theme.space-6;
+        text: root.title;
+        color: Theme.text-primary;
+        font-size: Theme.font-h1;
+        font-weight: 600;
+    }
+}
+
+// Below 700px the sidebar is replaced by this bar. Every destination is a
+// 44px target; the active fill keeps near-black text on the accent (#6 §6).
+component BottomNav inherits Rectangle {
+    in property <int> active-tab;
+    callback select(int);
+    height: 64px;
+    background: Theme.solid-surface;
+    Rectangle {
+        width: 100%;
+        height: 1px;
+        background: Theme.card-edge;
+    }
+    for destination[i] in Navigation.destinations: Rectangle {
+        x: i * parent.width / Navigation.destinations.length;
+        y: Theme.space-2;
+        width: parent.width / Navigation.destinations.length;
+        height: 44px;
+        accessible-role: button;
+        accessible-label: "Open " + destination;
+        background: root.active-tab == i ? Theme.accent : transparent;
+        border-radius: Theme.radius-sm;
+        animate background {
+            duration: Theme.motion-hover;
+            easing: cubic-bezier(0.2, 0, 0, 1);
+        }
+        NavIcon {
+            x: (parent.width - 16px) / 2;
+            y: 3px;
+            width: 16px;
+            height: 16px;
+            index: i;
+            tint: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
+        }
+        Text {
+            x: Theme.space-2;
+            y: 23px;
+            width: parent.width - Theme.space-4;
+            text: destination;
+            color: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
+            font-size: Theme.font-label;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+        TouchArea {
+            clicked => { root.select(i); }
+        }
+    }
+}
+
 // Today and Device panes reuse the shell chrome and short cross-fade, then
 // hand their content area to the dedicated surface components.
 component TodayPane inherits Rectangle {
     in property <bool> active: false;
+    in property <bool> narrow: false;
     in property <bool> reduced-transparency: false;
     in property <bool> high-contrast: false;
     in property <[CardView]> cards: [];
     callback reorder(string, int);
+    callback open-control(int);
 
     opacity: root.active ? 1 : 0;
     visible: root.opacity > 0;
@@ -24,31 +90,27 @@ component TodayPane inherits Rectangle {
         reduced-transparency: root.reduced-transparency;
         high-contrast: root.high-contrast;
     }
-    Text {
-        x: Theme.space-6;
-        y: Theme.space-6;
-        text: "Today";
-        color: Theme.text-primary;
-        font-size: Theme.font-title;
-        font-weight: 600;
-    }
+    PaneHeader { title: "Today"; }
     TodaySurface {
         y: 56px;
         width: 100%;
         height: parent.height - 56px;
+        narrow: root.narrow;
         cards: root.cards;
         reduced-transparency: root.reduced-transparency;
         high-contrast: root.high-contrast;
         reorder(key, delta) => { root.reorder(key, delta); }
+        open-control(index) => { root.open-control(index); }
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
 component DevicePane inherits Rectangle {
     in property <bool> active: false;
+    in property <bool> narrow: false;
     in property <bool> reduced-transparency: false;
     in property <bool> high-contrast: false;
     in property <[RowView]> rows: [];
@@ -63,30 +125,25 @@ component DevicePane inherits Rectangle {
         reduced-transparency: root.reduced-transparency;
         high-contrast: root.high-contrast;
     }
-    Text {
-        x: Theme.space-6;
-        y: Theme.space-6;
-        text: "Device";
-        color: Theme.text-primary;
-        font-size: Theme.font-title;
-        font-weight: 600;
-    }
+    PaneHeader { title: "Device"; }
     DeviceSurface {
         y: 56px;
         width: 100%;
         height: parent.height - 56px;
+        narrow: root.narrow;
         rows: root.rows;
         reduced-transparency: root.reduced-transparency;
         high-contrast: root.high-contrast;
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
 component WorkbenchPane inherits Rectangle {
     in property <bool> active: false;
+    in property <bool> narrow: false;
     in property <bool> reduced-transparency: false;
     in property <bool> high-contrast: false;
     in property <[FrameView]> frames: [];
@@ -125,9 +182,12 @@ component WorkbenchPane inherits Rectangle {
         reduced-transparency: root.reduced-transparency;
         high-contrast: root.high-contrast;
     }
+    PaneHeader { title: "Workbench"; }
     WorkbenchSurface {
+        y: 56px;
         width: 100%;
-        height: 100%;
+        height: parent.height - 56px;
+        narrow: root.narrow;
         frames: root.frames;
         actions: root.actions;
         selected-frame: root.selected-frame;
@@ -156,12 +216,13 @@ component WorkbenchPane inherits Rectangle {
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
 component DataPane inherits Rectangle {
     in property <bool> active: false;
+    in property <bool> narrow: false;
     in property <bool> reduced-transparency: false;
     in property <bool> high-contrast: false;
     in property <[string]> series-keys: [];
@@ -169,13 +230,18 @@ component DataPane inherits Rectangle {
     in property <[string]> point-values: [];
     in property <int> selected-series: 0;
     in property <string> series-summary: "";
+    in property <string> axis-min: "0";
+    in property <string> axis-max: "1";
     in property <string> preview: "";
     in property <string> status: "";
     in property <bool> pending-delete: false;
     in property <string> units: "metric";
+    callback toggle-reduced-transparency();
+    callback toggle-high-contrast();
     callback select-series(int);
     callback export-json();
     callback export-csv();
+    callback copy-preview();
     callback request-delete();
     callback confirm-delete();
     callback cancel-delete();
@@ -191,30 +257,31 @@ component DataPane inherits Rectangle {
         reduced-transparency: root.reduced-transparency;
         high-contrast: root.high-contrast;
     }
-    Text {
-        x: Theme.space-6;
-        y: Theme.space-6;
-        text: "Data";
-        color: Theme.text-primary;
-        font-size: Theme.font-title;
-        font-weight: 600;
-    }
+    PaneHeader { title: "Data"; }
     DataSurface {
         y: 56px;
         width: 100%;
         height: parent.height - 56px;
+        narrow: root.narrow;
         series-keys: root.series-keys;
         points: root.points;
         point-values: root.point-values;
         selected-series: root.selected-series;
         series-summary: root.series-summary;
+        axis-min: root.axis-min;
+        axis-max: root.axis-max;
         preview: root.preview;
         status: root.status;
         pending-delete: root.pending-delete;
         units: root.units;
+        reduced-transparency: root.reduced-transparency;
+        high-contrast: root.high-contrast;
+        toggle-reduced-transparency() => { root.toggle-reduced-transparency(); }
+        toggle-high-contrast() => { root.toggle-high-contrast(); }
         select-series(i) => { root.select-series(i); }
         export-json() => { root.export-json(); }
         export-csv() => { root.export-csv(); }
+        copy-preview() => { root.copy-preview(); }
         request-delete() => { root.request-delete(); }
         confirm-delete() => { root.confirm-delete(); }
         cancel-delete() => { root.cancel-delete(); }
@@ -222,7 +289,7 @@ component DataPane inherits Rectangle {
     }
     animate opacity {
         duration: Theme.reduced-motion-crossfade;
-        easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        easing: cubic-bezier(0.2, 0, 0, 1);
     }
 }
 
@@ -230,14 +297,27 @@ export component AppWindow inherits Window {
     // State applied by the Rust bridge.
     in-out property <string> device-name: "—";
     in-out property <int> battery: -1;
-    in-out property <string> connection-state: "idle";
-    in-out property <string> last-sync: "never";
+    in-out property <string> connection-state: "Idle";
+    in-out property <string> last-sync: "Never synced";
     in-out property <bool> syncing: false;
+    // UI-owned refresh state. `connection-state` stays authoritative; these
+    // describe the last refresh, so a failure no longer reads as "connected".
+    in-out property <string> sync-phase: "Idle";
+    in-out property <bool> sync-failed: false;
+    in-out property <string> last-error: "";
     in-out property <int> active-tab: 0;
     in-out property <[CardView]> metric-cards: [];
     in-out property <[RowView]> device-values: [];
     callback reorder-card(string, int);
     callback sync-now();
+
+    // Two-step write confirmation. The first click on a card's Control arms
+    // the action; only the sheet's Confirm calls AppState::act.
+    in-out property <bool> control-sheet-open: false;
+    in-out property <string> control-sheet-label: "";
+    callback open-control-sheet(int);
+    callback close-control-sheet();
+    callback confirm-control-action();
 
     // Workbench raw inspector and opt-in AI panel.
     in-out property <[FrameView]> frames: [];
@@ -272,6 +352,8 @@ export component AppWindow inherits Window {
     in-out property <[string]> data-point-values: [];
     in-out property <int> data-selected-series: 0;
     in-out property <string> data-series-summary: "No history yet";
+    in-out property <string> data-axis-min: "0";
+    in-out property <string> data-axis-max: "1";
     in-out property <string> data-preview: "";
     in-out property <string> data-status: "Local store · nothing leaves this device";
     in-out property <bool> data-pending-delete: false;
@@ -279,33 +361,57 @@ export component AppWindow inherits Window {
     callback select-data-series(int);
     callback export-json();
     callback export-csv();
+    callback copy-preview();
     callback request-delete();
     callback confirm-delete();
     callback cancel-delete();
     callback toggle-units();
 
     // Accessibility toggles (Slint 1.19 has no system detection for these).
+    // Hosts seed them from UiOptions; the Data pane can flip them at runtime.
     in property <bool> reduced-transparency: false;
     in property <bool> high-contrast: false;
+    callback toggle-reduced-transparency();
+    callback toggle-high-contrast();
 
     // The four navigation destinations, exposed for the generated-type test.
     out property <[string]> navigation-destinations: Navigation.destinations;
 
+    // True below the 700px breakpoint: bottom nav replaces the 220px sidebar.
+    out property <bool> narrow: root.width < 700px;
+
+    // Shared chrome geometry. Wide keeps the original 232/16/88/104 insets;
+    // narrow drops the gutter, gives the strip two rows and reserves the nav.
+    property <length> gutter: root.narrow ? Theme.space-3 : 232px;
+    property <length> right-gutter: root.narrow ? Theme.space-3 : 16px;
+    property <length> strip-top: 16px;
+    property <length> strip-height: root.narrow ? 88px : 56px;
+    property <length> bottom-nav-height: root.narrow ? 64px : 0px;
+    property <length> content-top: root.strip-top + root.strip-height + Theme.space-4;
+    property <length> content-width: root.width - root.gutter - root.right-gutter;
+    property <length> content-height: root.height - root.content-top - root.bottom-nav-height - Theme.space-4;
+
     // Status color is derived from the bridge label; the text label remains
     // visible so color is never the only signal.
     out property <color> status-color:
-        root.connection-state == "connected" ? Theme.status-good :
-        (root.connection-state == "reconnecting" || root.connection-state == "scanning" || root.connection-state == "connecting") ? Theme.status-warn :
-        root.connection-state == "not found" ? Theme.status-bad :
+        root.sync-failed ? Theme.status-bad :
+        root.sync-phase == "Syncing" || root.sync-phase == "Reconnecting" || root.sync-phase == "Scanning" || root.sync-phase == "Connecting" ? Theme.status-warn :
+        root.sync-phase == "Connected" ? Theme.status-good :
+        root.sync-phase == "Not found" ? Theme.status-bad :
         Theme.text-secondary;
 
-    width: 1040px;
-    height: 720px;
+    // One shared Window serves desktop and Android. 360dp/600px is the hard
+    // floor; 900×600 is the desktop layout target the wide branch is built for.
+    min-width: 360px;
+    min-height: 600px;
+    preferred-width: 900px;
+    preferred-height: 600px;
     title: "OpenWatch";
     background: Theme.zinc-950;
 
     // Sidebar chrome: solid base plus an optional glass layer.
     Rectangle {
+        visible: !root.narrow;
         width: 220px;
         height: 100%;
         background: Theme.solid-surface;
@@ -327,7 +433,7 @@ export component AppWindow inherits Window {
             y: Theme.space-6;
             text: "OpenWatch";
             color: Theme.text-primary;
-            font-size: Theme.font-title;
+            font-size: Theme.font-h1;
             font-weight: 700;
         }
         for destination[i] in Navigation.destinations: Rectangle {
@@ -335,22 +441,36 @@ export component AppWindow inherits Window {
             y: 88px + i * 52px;
             width: 196px;
             height: 44px;
+            accessible-role: button;
+            accessible-label: "Open " + destination;
             background: root.active-tab == i ? Theme.accent : transparent;
             border-radius: Theme.radius-sm;
             animate background {
-                duration: Theme.motion-standard;
-                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+                duration: Theme.motion-state;
+                easing: cubic-bezier(0.2, 0, 0, 1);
+            }
+            NavIcon {
+                x: Theme.space-3;
+                y: (parent.height - 20px) / 2;
+                width: 20px;
+                height: 20px;
+                index: i;
+                tint: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
+                animate tint {
+                    duration: Theme.motion-hover;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
             }
             Text {
-                x: Theme.space-3;
+                x: Theme.space-3 + 30px;
                 y: (parent.height - self.height) / 2;
                 text: destination;
                 // Near-black on the #0a84ff accent fill is 5.46:1 (design §6
                 // requires ≥4.5:1); white text there was only ~3.3:1.
                 color: root.active-tab == i ? Theme.zinc-950 : Theme.text-primary;
-                font-size: Theme.font-body;
+                font-size: Theme.font-label;
             }
-            TouchArea {
+            touch := TouchArea {
                 clicked => {
                     root.active-tab = i;
                 }
@@ -360,10 +480,10 @@ export component AppWindow inherits Window {
 
     // Connection strip: device, battery, state, last sync and primary action.
     Rectangle {
-        x: 232px;
-        y: 16px;
-        width: root.width - 248px;
-        height: 56px;
+        x: root.gutter;
+        y: root.strip-top;
+        width: root.content-width;
+        height: root.strip-height;
         GlassCard {
             width: 100%;
             height: 100%;
@@ -371,109 +491,240 @@ export component AppWindow inherits Window {
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
         }
-        Text {
-            x: Theme.space-6;
-            y: 16px;
-            text: root.device-name;
-            color: Theme.text-primary;
-            font-size: Theme.font-body;
-            font-weight: 600;
+        if !root.narrow: Rectangle {
+            width: 100%;
+            height: 100%;
+            Text {
+                x: Theme.space-6;
+                y: 16px;
+                text: root.device-name;
+                color: Theme.text-primary;
+                font-size: Theme.font-body;
+                font-weight: 600;
+            }
+            // Numbers sit on a near-opaque content surface above the glass.
+            Rectangle {
+                x: parent.width - 440px;
+                y: 8px;
+                width: 88px;
+                height: 40px;
+                background: Theme.content-surface;
+                border-radius: Theme.radius-sm;
+                Text {
+                    x: Theme.space-3;
+                    y: (parent.height - self.height) / 2;
+                    text: root.battery >= 0 ? "\{root.battery}%" : "—";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-body;
+                    font-family: Theme.numeral-font;
+                }
+            }
+            Rectangle {
+                x: parent.width - 340px;
+                y: 24px;
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.status-color;
+                animate background {
+                    duration: Theme.motion-state;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+            }
+            Text {
+                x: parent.width - 324px;
+                y: 6px;
+                width: 170px;
+                text: root.sync-phase;
+                color: root.sync-failed ? Theme.status-bad : (root.high-contrast ? Theme.text-primary : root.status-color);
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
+            Text {
+                x: parent.width - 324px;
+                y: 22px;
+                width: 170px;
+                text: root.last-sync;
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+                overflow: elide;
+            }
+            if root.sync-failed : Text {
+                x: parent.width - 324px;
+                y: 38px;
+                width: 170px;
+                text: root.last-error;
+                color: Theme.status-bad;
+                font-size: Theme.font-micro;
+                overflow: elide;
+            }
+            Rectangle {
+                x: parent.width - 150px;
+                y: 8px;
+                width: 110px;
+                height: 40px;
+                background: root.syncing ? Theme.content-surface : (sync-touch.pressed ? Theme.accent : Theme.glass-card-dark);
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Sync now";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                SyncIcon {
+                    x: 8px;
+                    y: (parent.height - 16px) / 2;
+                    width: 16px;
+                    height: 16px;
+                    tint: root.syncing ? Theme.text-secondary : (sync-touch.pressed ? Theme.zinc-950 : Theme.text-primary);
+                }
+                Text {
+                    x: 24px;
+                    width: parent.width - 24px;
+                    height: 100%;
+                    text: root.syncing ? "Syncing…" : "Sync now";
+                    color: root.syncing ? Theme.text-secondary : (sync-touch.pressed ? Theme.zinc-950 : Theme.text-primary);
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                sync-touch := TouchArea {
+                    enabled: !root.syncing;
+                    clicked => { root.sync-now(); }
+                }
+            }
         }
-        // Numbers sit on a near-opaque content surface above the glass.
-        Rectangle {
-            x: parent.width - 440px;
-            y: 12px;
-            width: 88px;
-            height: 32px;
-            background: Theme.content-surface;
-            border-radius: Theme.radius-sm;
+        if root.narrow: Rectangle {
+            width: 100%;
+            height: 100%;
             Text {
                 x: Theme.space-3;
-                y: (parent.height - self.height) / 2;
-                text: root.battery >= 0 ? "\{root.battery}%" : "—";
+                y: Theme.space-2;
+                width: parent.width - 120px;
+                text: root.device-name;
                 color: Theme.text-primary;
-                font-size: Theme.font-caption;
-                font-family: Theme.numeral-font;
+                font-size: Theme.font-body;
+                font-weight: 600;
+                overflow: elide;
             }
-        }
-        Rectangle {
-            x: parent.width - 340px;
-            y: 24px;
-            width: 8px;
-            height: 8px;
-            border-radius: 4px;
-            background: root.status-color;
-            animate background {
-                duration: Theme.motion-standard;
-                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
-            }
-        }
-        Text {
-            x: parent.width - 324px;
-            y: 16px;
-            text: root.connection-state;
-            color: root.high-contrast ? Theme.text-primary : root.status-color;
-            font-size: Theme.font-caption;
-        }
-        Text {
-            x: parent.width - 240px;
-            y: 16px;
-            text: "Synced \{root.last-sync}";
-            color: Theme.text-secondary;
-            font-size: Theme.font-caption;
-        }
-        // Primary action: 120 ms press feedback.
-        Rectangle {
-            x: parent.width - 150px;
-            y: 12px;
-            width: 110px;
-            height: 32px;
-            background: root.syncing ? Theme.content-surface :
-                (sync-touch.pressed ? Theme.accent : Theme.glass-card-dark);
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: Theme.card-edge;
-            animate background {
-                duration: Theme.motion-press;
-                easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+            Rectangle {
+                x: parent.width - 92px;
+                y: 20px;
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.status-color;
             }
             Text {
-                width: 100%;
-                height: 100%;
-                text: root.syncing ? "Syncing…" : "Sync now";
-                color: root.syncing ? Theme.text-secondary : Theme.text-primary;
-                font-size: Theme.font-caption;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+                x: parent.width - 80px;
+                y: Theme.space-2;
+                width: 68px;
+                text: root.sync-phase;
+                color: root.sync-failed ? Theme.status-bad : (root.high-contrast ? Theme.text-primary : root.status-color);
+                font-size: Theme.font-label;
+                overflow: elide;
             }
-            sync-touch := TouchArea {
-                enabled: !root.syncing;
-                clicked => { root.sync-now(); }
+            Rectangle {
+                x: Theme.space-3;
+                y: 44px;
+                width: 88px;
+                height: 40px;
+                background: Theme.content-surface;
+                border-radius: Theme.radius-sm;
+                Text {
+                    x: Theme.space-3;
+                    y: (parent.height - self.height) / 2;
+                    text: root.battery >= 0 ? "\{root.battery}%" : "—";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-body;
+                    font-family: Theme.numeral-font;
+                }
+            }
+            Text {
+                x: 108px;
+                y: 44px;
+                width: parent.width - 260px;
+                text: root.last-sync;
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+                overflow: elide;
+            }
+            if root.sync-failed : Text {
+                x: 108px;
+                y: 60px;
+                width: parent.width - 260px;
+                text: root.last-error;
+                color: Theme.status-bad;
+                font-size: Theme.font-micro;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                x: parent.width - 140px;
+                y: 44px;
+                width: 128px;
+                height: 40px;
+                background: root.syncing ? Theme.content-surface : (narrow-sync.pressed ? Theme.accent : Theme.glass-card-dark);
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Sync now";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                SyncIcon {
+                    x: 8px;
+                    y: (parent.height - 16px) / 2;
+                    width: 16px;
+                    height: 16px;
+                    tint: root.syncing ? Theme.text-secondary : (narrow-sync.pressed ? Theme.zinc-950 : Theme.text-primary);
+                }
+                Text {
+                    x: 24px;
+                    width: parent.width - 24px;
+                    height: 100%;
+                    text: root.syncing ? "Syncing…" : "Sync now";
+                    color: root.syncing ? Theme.text-secondary : (narrow-sync.pressed ? Theme.zinc-950 : Theme.text-primary);
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                narrow-sync := TouchArea {
+                    enabled: !root.syncing;
+                    clicked => { root.sync-now(); }
+                }
             }
         }
     }
 
     // Content area: one pane per destination, stacked for cross-fade.
     Rectangle {
-        x: 232px;
-        y: 88px;
-        width: root.width - 248px;
-        height: root.height - 104px;
+        x: root.gutter;
+        y: root.content-top;
+        width: root.content-width;
+        height: root.content-height;
         TodayPane {
             active: root.active-tab == 0;
+            narrow: root.narrow;
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
             cards: root.metric-cards;
             reorder(key, delta) => { root.reorder-card(key, delta); }
+            open-control(index) => { root.open-control-sheet(index); }
         }
         DevicePane {
             active: root.active-tab == 1;
+            narrow: root.narrow;
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
             rows: root.device-values;
         }
         WorkbenchPane {
             active: root.active-tab == 2;
+            narrow: root.narrow;
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
             frames: root.frames;
@@ -504,6 +755,7 @@ export component AppWindow inherits Window {
         }
         DataPane {
             active: root.active-tab == 3;
+            narrow: root.narrow;
             reduced-transparency: root.reduced-transparency;
             high-contrast: root.high-contrast;
             series-keys: root.data-series;
@@ -511,17 +763,138 @@ export component AppWindow inherits Window {
             point-values: root.data-point-values;
             selected-series: root.data-selected-series;
             series-summary: root.data-series-summary;
+            axis-min: root.data-axis-min;
+            axis-max: root.data-axis-max;
             preview: root.data-preview;
             status: root.data-status;
             pending-delete: root.data-pending-delete;
             units: root.data-units;
+            toggle-reduced-transparency() => { root.toggle-reduced-transparency(); }
+            toggle-high-contrast() => { root.toggle-high-contrast(); }
             select-series(i) => { root.select-data-series(i); }
             export-json() => { root.export-json(); }
             export-csv() => { root.export-csv(); }
+            copy-preview() => { root.copy-preview(); }
             request-delete() => { root.request-delete(); }
             confirm-delete() => { root.confirm-delete(); }
             cancel-delete() => { root.cancel-delete(); }
             toggle-units() => { root.toggle-units(); }
+        }
+    }
+
+    BottomNav {
+        visible: root.narrow;
+        x: 0;
+        y: root.height - root.bottom-nav-height;
+        width: 100%;
+        active-tab: root.active-tab;
+        select(i) => { root.active-tab = i; }
+    }
+
+    // Modal confirmation. The dim layer absorbs clicks outside the panel so a
+    // stale control cannot be armed twice; Cancel arms nothing and writes nothing.
+    modal := Rectangle {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        background: #000000aa;
+        // Modal transition: a fade in/out instead of a hard cut. Visibility
+        // follows opacity so the sheet stops taking clicks once it is gone.
+        opacity: root.control-sheet-open ? 1 : 0;
+        visible: self.opacity > 0;
+        animate opacity {
+            duration: Theme.motion-modal;
+            easing: cubic-bezier(0.2, 0, 0, 1);
+        }
+        TouchArea {
+            clicked => { root.close-control-sheet(); }
+        }
+        Rectangle {
+            width: Math.min(400px, root.width - Theme.space-4 * 2);
+            height: 208px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.solid-surface;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: Theme.card-edge;
+            opacity: modal.opacity;
+            animate opacity {
+                duration: Theme.motion-panel;
+                easing: cubic-bezier(0.2, 0, 0, 1);
+            }
+            Text {
+                x: Theme.space-6;
+                y: Theme.space-6;
+                text: "Confirm control";
+                color: Theme.text-primary;
+                font-size: Theme.font-h2;
+                font-weight: 600;
+            }
+            Text {
+                x: Theme.space-6;
+                y: 60px;
+                width: parent.width - Theme.space-6 * 2;
+                text: root.control-sheet-label;
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                x: Theme.space-6;
+                y: parent.height - 64px;
+                width: (parent.width - Theme.space-6 * 2 - Theme.space-3) / 2;
+                height: 44px;
+                background: Theme.zinc-800;
+                border-radius: Theme.radius-sm;
+                accessible-role: button;
+                accessible-label: "Cancel control";
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: "Cancel";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                cancel-touch := TouchArea {
+                    clicked => { root.close-control-sheet(); }
+                }
+            }
+            Rectangle {
+                x: parent.width - Theme.space-6 - (parent.width - Theme.space-6 * 2 - Theme.space-3) / 2;
+                y: parent.height - 64px;
+                width: (parent.width - Theme.space-6 * 2 - Theme.space-3) / 2;
+                height: 44px;
+                background: Theme.accent;
+                opacity: confirm-touch.pressed ? 0.8 : 1;
+                border-radius: Theme.radius-sm;
+                accessible-role: button;
+                accessible-label: "Confirm control";
+                ConfirmIcon {
+                    x: Theme.space-3;
+                    y: (parent.height - 16px) / 2;
+                    width: 16px;
+                    height: 16px;
+                    tint: Theme.zinc-950;
+                }
+                Text {
+                    x: 28px;
+                    width: parent.width - 28px;
+                    height: 100%;
+                    text: "Confirm";
+                    color: Theme.zinc-950;
+                    font-size: Theme.font-label;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                confirm-touch := TouchArea {
+                    clicked => { root.confirm-control-action(); }
+                }
+            }
         }
     }
 }

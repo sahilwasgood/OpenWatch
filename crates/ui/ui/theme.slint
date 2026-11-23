@@ -33,39 +33,48 @@ export global Theme {
     // Near-opaque surfaces for tabular numbers and long text.
     out property <color> content-surface: #09090bee;
 
-    // Radii: 14 / 24 / 28--36 px.
-    out property <length> radius-sm: 14px;
-    out property <length> radius-md: 24px;
-    out property <length> radius-lg: 28px;
-    out property <length> radius-xl: 36px;
+    // Radii: 6 button/input, 8 card, 12 panel/popover.
+    out property <length> radius-sm: 6px;
+    out property <length> radius-md: 8px;
+    out property <length> radius-lg: 12px;
 
-    // 4 pt spacing base.
+    // 4 pt spacing base: 4 / 8 / 12 / 16 / 24 / 32.
     out property <length> space-unit: 4px;
     out property <length> space-2: 8px;
     out property <length> space-3: 12px;
+    out property <length> space-4: 16px;
     out property <length> space-6: 24px;
+    out property <length> space-8: 32px;
 
-    // Motion: 250 ms state changes, 120 ms press.
-    out property <duration> motion-standard: 250ms;
-    out property <duration> motion-press: 120ms;
+    // Motion: one easing family, cubic-bezier(.2,0,0,1), used by every animated
+    // surface. Exits are faster than enters; geometry never animates.
+    out property <duration> motion-hover: 120ms;
+    out property <duration> motion-press: 90ms;
+    out property <duration> motion-state: 180ms;
+    out property <duration> motion-panel: 220ms;
+    out property <duration> motion-modal: 240ms;
 
-    // Type scale 11/13/15/17/22/34 pt. Tabular numerals: use a font whose
-    // figures share one advance width so columns of digits line up.
-    out property <length> font-hero: 34px;
-    out property <length> font-title: 22px;
-    out property <length> font-section: 17px;
-    out property <length> font-body: 15px;
-    out property <length> font-caption: 13px;
+    // Type scale (px): display 24/650/32, H1 18/600/24, H2 15/600/20,
+    // body 13/400/20, label 12/500/16, micro 11/500/14. Interactive labels
+    // use font-label (12px) or larger; font-micro is for passive data only.
+    out property <length> font-display: 24px;
+    out property <length> font-h1: 18px;
+    out property <length> font-h2: 15px;
+    out property <length> font-body: 13px;
+    out property <length> font-label: 12px;
     out property <length> font-micro: 11px;
     out property <string> numeral-font: "Inter Tight, SF Pro Text, Menlo, monospace";
 
     // Accessibility fallbacks.
     // reduced-transparency: every glass surface falls back to this solid token.
     out property <color> solid-surface: #18181b;
-    // reduced-motion: short cross-fade instead of the full 250 ms transition.
+    // reduced-motion is platform-driven: a short cross-fade replaces the full
+    // panel transition when the host requests reduced motion.
     out property <duration> reduced-motion-crossfade: 80ms;
     // high-contrast / forced-colors: visible border token.
     out property <color> high-contrast-border: #f4f4f5;
+    // Visible keyboard-focus ring on dark surfaces.
+    out property <color> focus-ring: #f4f4f5;
 }
 
 // Shared navigation model. Kept in the theme module so every destination
@@ -98,4 +107,36 @@ export component GlassCard inherits Rectangle {
         border-color: root.high-contrast ? Theme.high-contrast-border : Theme.card-edge;
         backdrop-blur: Theme.glass-blur;
     }
+}
+
+// One SVG family, recolored from theme tokens. `colorize` turns each SVG into
+// an alpha mask, so the same shapes read correctly on accent and neutral fills.
+component IconBase inherits Image {
+    in property <color> tint: Theme.text-primary;
+    image-fit: contain;
+    colorize: root.tint;
+}
+
+export component NavIcon inherits IconBase {
+    in property <int> index: 0;
+    source: root.index == 0 ? @image-url("../icons/home.svg") :
+            root.index == 1 ? @image-url("../icons/device.svg") :
+            root.index == 2 ? @image-url("../icons/workbench.svg") :
+            @image-url("../icons/data.svg");
+}
+
+export component SyncIcon inherits IconBase {
+    source: @image-url("../icons/sync.svg");
+}
+
+export component DownloadIcon inherits IconBase {
+    source: @image-url("../icons/download.svg");
+}
+
+export component TrashIcon inherits IconBase {
+    source: @image-url("../icons/trash.svg");
+}
+
+export component ConfirmIcon inherits IconBase {
+    source: @image-url("../icons/confirm.svg");
 }

@@ -24,54 +24,59 @@ component FrameRow inherits Rectangle {
     in property <FrameView> row-data;
     in property <bool> selected: false;
     callback clicked();
-    height: 30px;
+    height: 40px;
     background: root.selected ? Theme.accent : (row-touch.has-hover ? Theme.glass-card-dark : transparent);
     border-radius: Theme.radius-sm;
+    animate background {
+        duration: Theme.motion-hover;
+        easing: cubic-bezier(0.2, 0, 0, 1);
+    }
 
+    // A selected row is an accent fill, so every cell flips to near-black.
     Text {
-        x: 8px; y: 6px; width: 150px;
+        x: 8px; y: 12px; width: 150px;
         text: root.row-data.time;
-        color: Theme.text-secondary;
+        color: root.selected ? Theme.zinc-950 : Theme.text-secondary;
         font-size: Theme.font-micro;
         font-family: Theme.numeral-font;
     }
     Text {
-        x: 164px; y: 6px; width: 36px;
+        x: 164px; y: 12px; width: 36px;
         text: root.row-data.direction;
-        color: Theme.text-primary;
+        color: root.selected ? Theme.zinc-950 : Theme.text-primary;
         font-size: Theme.font-micro;
     }
     Text {
-        x: 206px; y: 6px; width: 52px;
+        x: 206px; y: 12px; width: 52px;
         text: root.row-data.cmd;
-        color: Theme.text-primary;
+        color: root.selected ? Theme.zinc-950 : Theme.text-primary;
         font-size: Theme.font-micro;
         font-family: Theme.numeral-font;
     }
     // Evidence tag: L / S / U. The long label sits in the adjacent column.
     Text {
-        x: 264px; y: 6px; width: 20px;
+        x: 264px; y: 12px; width: 20px;
         text: root.row-data.confidence-tag;
-        color: Theme.text-primary;
+        color: root.selected ? Theme.zinc-950 : Theme.text-primary;
         font-size: Theme.font-micro;
         font-weight: 700;
     }
     Text {
-        x: 290px; y: 6px; width: 76px;
+        x: 290px; y: 12px; width: 76px;
         text: root.row-data.confidence;
-        color: Theme.text-secondary;
+        color: root.selected ? Theme.zinc-950 : Theme.text-secondary;
         font-size: Theme.font-micro;
     }
     Text {
-        x: 372px; y: 6px; width: 200px;
+        x: 372px; y: 12px; width: 200px;
         text: root.row-data.opcode;
-        color: Theme.text-primary;
+        color: root.selected ? Theme.zinc-950 : Theme.text-primary;
         font-size: Theme.font-micro;
     }
     Text {
-        x: 580px; y: 6px; width: 204px;
+        x: 580px; y: 12px; width: 204px;
         text: root.row-data.hex;
-        color: Theme.text-secondary;
+        color: root.selected ? Theme.zinc-950 : Theme.text-secondary;
         font-size: Theme.font-micro;
         font-family: Theme.numeral-font;
     }
@@ -83,12 +88,16 @@ component FrameRow inherits Rectangle {
 component ActionRow inherits Rectangle {
     in property <ActionView> action;
     callback run();
-    height: 38px;
+    height: 40px;
     background: run-touch.has-hover ? Theme.glass-card-dark : transparent;
     border-radius: Theme.radius-sm;
+    animate background {
+        duration: Theme.motion-hover;
+        easing: cubic-bezier(0.2, 0, 0, 1);
+    }
 
     Rectangle {
-        x: 6px; y: 9px; width: 20px; height: 20px;
+        x: 6px; y: 10px; width: 20px; height: 20px;
         background: root.action.tag == "S" ? Theme.status-warn : Theme.status-bad;
         border-radius: Theme.radius-sm;
         Text {
@@ -102,22 +111,29 @@ component ActionRow inherits Rectangle {
         }
     }
     Text {
-        x: 34px; y: 10px; width: 230px;
+        x: 34px; y: 12px; width: parent.width - 104px;
         text: root.action.title;
         color: Theme.text-primary;
         font-size: Theme.font-micro;
+        overflow: elide;
     }
     Rectangle {
-        x: 296px; y: 7px; width: 64px; height: 24px;
+        x: parent.width - 70px; y: 0; width: 64px; height: 40px;
         background: run-touch.pressed ? Theme.accent : Theme.glass-card-dark;
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: Theme.card-edge;
+        accessible-role: button;
+        accessible-label: "Review " + root.action.title;
+        animate background {
+            duration: Theme.motion-press;
+            easing: cubic-bezier(0.2, 0, 0, 1);
+        }
         Text {
             width: 100%; height: 100%;
             text: "Review";
-            color: Theme.text-primary;
-            font-size: Theme.font-micro;
+            color: run-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+            font-size: Theme.font-label;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
@@ -128,6 +144,7 @@ component ActionRow inherits Rectangle {
 }
 
 export component WorkbenchSurface inherits Rectangle {
+    in property <bool> narrow: false;
     in property <[FrameView]> frames: [];
     in property <[ActionView]> actions: [];
     in property <int> selected-frame: -1;
@@ -155,271 +172,348 @@ export component WorkbenchSurface inherits Rectangle {
     callback confirm-action();
     callback cancel-action();
 
-    Text {
-        x: Theme.space-6; y: 8px;
-        text: "Workbench · raw inspector";
-        color: Theme.text-primary;
-        font-size: Theme.font-section;
-        font-weight: 600;
-    }
+    property <length> panel-gap: Theme.space-4;
+    property <length> panel-width: (root.width - panel-gap) / 2;
 
-    // Frame table: time, direction, command, confidence tag, confidence,
-    // opcode name and the exact hex — the only place hex is rendered.
-    Rectangle {
-        y: 36px; width: 100%; height: 200px;
-        background: Theme.content-surface;
-        border-radius: Theme.radius-sm;
-        Text {
-            x: 8px; y: 6px; width: 150px; text: "Time (UTC)";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Text {
-            x: 164px; y: 6px; width: 36px; text: "Dir";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Text {
-            x: 206px; y: 6px; width: 52px; text: "Cmd";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Text {
-            x: 264px; y: 6px; width: 100px; text: "Confidence";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Text {
-            x: 372px; y: 6px; width: 200px; text: "Opcode";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Text {
-            x: 580px; y: 6px; width: 204px; text: "Frame hex";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Rectangle {
-            x: 4px; y: 24px; width: parent.width - 8px; height: 1px;
-            background: Theme.card-edge;
-        }
-        Flickable {
-            y: 28px; width: 100%; height: parent.height - 28px;
-            content-width: parent.width;
-            content-height: Math.max(self.height, root.frames.length * 30px);
-            for frame[i] in root.frames: FrameRow {
-                y: i * 30px;
-                width: 100%;
-                row-data: frame;
-                selected: root.selected-frame == frame.id;
-                clicked => { root.select-frame(frame.id); }
-            }
-        }
-    }
+    // Fixed-height cards inside a Flickable: the wide branch shows the two
+    // lower panels side by side, the narrow branch stacks them full width.
+    Flickable {
+        width: 100%;
+        height: 100%;
+        content-width: self.width;
+        content-height: root.narrow ? 712px + panel-gap + 400px + Theme.space-4 : 712px;
 
-    // Detail pane for the selected frame.
-    Rectangle {
-        y: 244px; width: 100%; height: 72px;
-        background: Theme.content-surface;
-        border-radius: Theme.radius-sm;
-        Text {
-            x: Theme.space-3; y: 6px;
-            text: "Detail · \{root.selected-time} · \{root.selected-direction} · \{root.selected-cmd} · \{root.selected-opcode} [\{root.selected-confidence}]";
-            color: Theme.text-primary;
-            font-size: Theme.font-caption;
+        // Frame table: time, direction, command, confidence tag, confidence,
+        // opcode name and the exact hex — the only place hex is rendered.
+        Rectangle {
+            y: 8px; width: 100%; height: 200px;
+            background: Theme.content-surface;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: 8px; y: 6px; width: 150px; text: "Time (UTC)";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: 164px; y: 6px; width: 36px; text: "Dir";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: 206px; y: 6px; width: 52px; text: "Cmd";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: 264px; y: 6px; width: 100px; text: "Confidence";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: 372px; y: 6px; width: 200px; text: "Opcode";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: 580px; y: 6px; width: 204px; text: "Frame hex";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Rectangle {
+                x: 4px; y: 24px; width: Math.max(parent.width - 8px, 776px); height: 1px;
+                background: Theme.card-edge;
+            }
+            Flickable {
+                y: 28px; width: 100%; height: parent.height - 28px;
+                content-width: Math.max(self.width, 784px);
+                content-height: Math.max(self.height, root.frames.length * 40px);
+                for frame[i] in root.frames: FrameRow {
+                    y: i * 40px;
+                    width: 784px;
+                    row-data: frame;
+                    selected: root.selected-frame == frame.id;
+                    clicked => { root.select-frame(frame.id); }
+                }
+            }
         }
-        Text {
-            x: Theme.space-3; y: 34px; width: parent.width - Theme.space-6;
-            text: "Frame \{root.selected-hex}";
-            color: Theme.text-secondary;
-            font-size: Theme.font-micro;
-            font-family: Theme.numeral-font;
-            wrap: word-wrap;
-        }
-    }
 
-    // Advanced actions are tagged S (source) or U (unverified) and never run
-    // on a single click: a second, explicit confirmation is required.
-    Rectangle {
-        y: 324px; width: 380px; height: 284px;
-        background: Theme.content-surface;
-        border-radius: Theme.radius-sm;
-        Text {
-            x: Theme.space-3; y: 8px;
-            text: "Advanced actions · S source / U unverified · preview only";
-            color: Theme.text-primary;
-            font-size: Theme.font-caption;
-        }
-        Flickable {
-            y: 34px; x: 4px; width: parent.width - 8px; height: 176px;
-            content-width: parent.width - 8px;
-            content-height: Math.max(self.height, root.actions.length * 38px);
-            for action[i] in root.actions: ActionRow {
-                y: i * 38px;
-                width: 100%;
-                action: action;
-                run => { root.request-action(action.key); }
-            }
-        }
-        Rectangle {
-            x: 4px; y: 214px; width: parent.width - 8px; height: 1px;
-            background: Theme.card-edge;
-        }
-        Text {
-            x: Theme.space-3; y: 222px; width: parent.width - Theme.space-6;
-            text: root.pending != "" ? "Review \{root.pending} (preview only)?" : "No action pending";
-            color: root.pending != "" ? Theme.status-warn : Theme.text-secondary;
-            font-size: Theme.font-micro;
-            wrap: word-wrap;
-        }
-        Rectangle {
-            x: Theme.space-3; y: 250px; width: 80px; height: 26px;
-            visible: root.pending != "";
-            background: confirm-touch.pressed ? Theme.accent : Theme.glass-card-dark;
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: Theme.card-edge;
-            Text {
-                width: 100%; height: 100%; text: "Mark reviewed";
-                color: Theme.text-primary; font-size: Theme.font-micro;
-                horizontal-alignment: center; vertical-alignment: center;
-            }
-            confirm-touch := TouchArea { clicked => { root.confirm-action(); } }
-        }
-        Rectangle {
-            x: 92px; y: 250px; width: 76px; height: 26px;
-            visible: root.pending != "";
-            background: cancel-touch.pressed ? Theme.accent : Theme.glass-card-dark;
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: Theme.card-edge;
-            Text {
-                width: 100%; height: 100%; text: "Cancel";
-                color: Theme.text-primary; font-size: Theme.font-micro;
-                horizontal-alignment: center; vertical-alignment: center;
-            }
-            cancel-touch := TouchArea { clicked => { root.cancel-action(); } }
-        }
-        Text {
-            x: Theme.space-3; y: 280px; width: parent.width - Theme.space-6;
-            text: "Preview only — no frame is written to the watch.";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-    }
-
-    // AI panel. Interpretation is off until a key is entered; the exact body
-    // is shown before any send, and the source frame sits beside the answer.
-    Rectangle {
-        x: 396px; y: 244px; width: 396px; height: 364px;
-        background: Theme.content-surface;
-        border-radius: Theme.radius-sm;
-        Text {
-            x: Theme.space-3; y: 6px;
-            text: "AI interpretation · BYOK · \{root.has-key ? "on" : "off"}";
-            color: Theme.text-primary;
-            font-size: Theme.font-caption;
-        }
-        Text { x: Theme.space-3; y: 28px; text: "Endpoint"; color: Theme.text-secondary; font-size: Theme.font-micro; }
-        Rectangle {
-            x: Theme.space-3; y: 42px; width: parent.width - Theme.space-6; height: 24px;
-            background: Theme.zinc-800;
-            border-radius: Theme.radius-sm;
-            TextInput {
-                x: Theme.space-2; y: 3px; width: parent.width - Theme.space-3;
-                text <=> root.endpoint;
-                color: Theme.text-primary;
-                font-size: Theme.font-micro;
-            }
-        }
-        Text { x: Theme.space-3; y: 70px; text: "API key (memory only, never stored)"; color: Theme.text-secondary; font-size: Theme.font-micro; }
-        Rectangle {
-            x: Theme.space-3; y: 84px; width: parent.width - Theme.space-6; height: 24px;
-            background: Theme.zinc-800;
-            border-radius: Theme.radius-sm;
-            TextInput {
-                x: Theme.space-2; y: 3px; width: parent.width - Theme.space-3;
-                text <=> root.key;
-                input-type: password;
-                color: Theme.text-primary;
-                font-size: Theme.font-micro;
-                edited => { root.key-edited(self.text); }
-            }
-        }
-        Text { x: Theme.space-3; y: 112px; text: "Note"; color: Theme.text-secondary; font-size: Theme.font-micro; }
-        Rectangle {
-            x: Theme.space-3; y: 126px; width: parent.width - Theme.space-6; height: 24px;
-            background: Theme.zinc-800;
-            border-radius: Theme.radius-sm;
-            TextInput {
-                x: Theme.space-2; y: 3px; width: parent.width - Theme.space-3;
-                text <=> root.note;
-                color: Theme.text-primary;
-                font-size: Theme.font-micro;
-            }
-        }
-        Rectangle {
-            x: Theme.space-3; y: 158px; width: 120px; height: 26px;
-            background: preview-touch.pressed ? Theme.accent : Theme.glass-card-dark;
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: Theme.card-edge;
-            Text {
-                width: 100%; height: 100%; text: "Show payload";
-                color: Theme.text-primary; font-size: Theme.font-micro;
-                horizontal-alignment: center; vertical-alignment: center;
-            }
-            preview-touch := TouchArea { clicked => { root.preview-payload(); } }
-        }
-        Rectangle {
-            x: 132px; y: 158px; width: 92px; height: 26px;
-            background: explain-touch.pressed ? Theme.accent : Theme.glass-card-dark;
-            border-radius: Theme.radius-sm;
-            border-width: 1px;
-            border-color: Theme.card-edge;
-            Text {
-                width: 100%; height: 100%; text: "Explain";
-                color: Theme.text-primary; font-size: Theme.font-micro;
-                horizontal-alignment: center; vertical-alignment: center;
-            }
-            explain-touch := TouchArea { clicked => { root.explain-frame(); } }
-        }
-        Text {
-            x: Theme.space-3; y: 190px; width: parent.width - Theme.space-6;
-            text: root.status;
-            color: root.has-key ? Theme.text-secondary : Theme.status-warn;
-            font-size: Theme.font-micro;
-            wrap: word-wrap;
-        }
-        Text {
-            x: Theme.space-3; y: 212px;
-            text: "Exact payload (review before send)";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Rectangle {
-            x: Theme.space-3; y: 228px; width: parent.width - Theme.space-6; height: 54px;
-            background: Theme.zinc-950;
+        // Detail pane: a real empty state until a frame is selected, instead
+        // of a dotted row of blank fields and an empty "Frame " prefix.
+        if root.selected-frame < 0 : Rectangle {
+            y: 216px; width: 100%; height: 72px;
+            background: Theme.content-surface;
             border-radius: Theme.radius-sm;
             Text {
-                x: Theme.space-2; y: 4px; width: parent.width - Theme.space-3;
-                text: root.preview != "" ? root.preview : "Select a frame, then show the payload.";
+                x: Theme.space-3; y: 18px; width: parent.width - Theme.space-6;
+                text: "Select a frame to inspect";
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+            }
+            Text {
+                x: Theme.space-3; y: 42px; width: parent.width - Theme.space-6;
+                text: "Choose a row above to see its opcode, evidence and exact hex.";
                 color: Theme.text-secondary;
                 font-size: Theme.font-micro;
+                overflow: elide;
+            }
+        }
+        if root.selected-frame >= 0 : Rectangle {
+            y: 216px; width: 100%; height: 72px;
+            background: Theme.content-surface;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: Theme.space-3; y: 6px; width: parent.width - Theme.space-6;
+                text: "Detail · \{root.selected-time} · \{root.selected-direction} · \{root.selected-cmd} · \{root.selected-opcode} [\{root.selected-confidence}]";
+                color: Theme.text-primary;
+                font-size: Theme.font-body;
+                overflow: elide;
+            }
+            Text {
+                x: Theme.space-3; y: 34px; width: parent.width - Theme.space-6;
+                text: "Frame \{root.selected-hex}";
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+                font-family: Theme.numeral-font;
                 wrap: word-wrap;
             }
         }
-        Text {
-            x: Theme.space-3; y: 290px; width: parent.width - Theme.space-6;
-            text: "Source frame: \{root.selected-hex}";
-            color: Theme.text-secondary;
-            font-size: Theme.font-micro;
-            font-family: Theme.numeral-font;
-            wrap: word-wrap;
+
+        // Advanced actions are tagged S (source) or U (unverified) and never run
+        // on a single click: a second, explicit confirmation is required.
+        Rectangle {
+            x: 0;
+            y: root.narrow ? 712px + panel-gap : 296px;
+            width: root.narrow ? parent.width : panel-width;
+            height: 400px;
+            background: Theme.content-surface;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: Theme.space-3; y: 8px; width: parent.width - Theme.space-6;
+                text: "Advanced actions · S source / U unverified · preview only";
+                color: Theme.text-primary;
+                font-size: Theme.font-body;
+                overflow: elide;
+            }
+            Flickable {
+                y: 34px; x: 4px; width: parent.width - 8px; height: 180px;
+                content-width: self.width;
+                content-height: Math.max(self.height, root.actions.length * 40px);
+                for action[i] in root.actions: ActionRow {
+                    y: i * 40px;
+                    width: 100%;
+                    action: action;
+                    run => { root.request-action(action.key); }
+                }
+            }
+            Rectangle {
+                x: 4px; y: 218px; width: parent.width - 8px; height: 1px;
+                background: Theme.card-edge;
+            }
+            Text {
+                x: Theme.space-3; y: 226px; width: parent.width - Theme.space-6;
+                text: root.pending != "" ? "Review \{root.pending} (preview only)?" : "No action pending";
+                color: root.pending != "" ? Theme.status-warn : Theme.text-secondary;
+                font-size: Theme.font-label;
+                wrap: word-wrap;
+            }
+            Rectangle {
+                x: Theme.space-3; y: 262px; width: 108px; height: 40px;
+                visible: root.pending != "";
+                background: confirm-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Mark reviewed";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                Text {
+                    width: 100%; height: 100%; text: "Mark reviewed";
+                    color: confirm-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                confirm-touch := TouchArea { clicked => { root.confirm-action(); } }
+            }
+            Rectangle {
+                x: 124px; y: 262px; width: 96px; height: 40px;
+                visible: root.pending != "";
+                background: cancel-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Cancel review";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                Text {
+                    width: 100%; height: 100%; text: "Cancel";
+                    color: cancel-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                cancel-touch := TouchArea { clicked => { root.cancel-action(); } }
+            }
+            Text {
+                x: Theme.space-3; y: 306px; width: parent.width - Theme.space-6;
+                text: "Preview only — no frame is written to the watch.";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: Theme.space-3; y: 326px; width: parent.width - Theme.space-6;
+                text: "Recorded actions";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Rectangle {
+                x: 4px; y: 342px; width: parent.width - 8px; height: 50px;
+                background: Theme.zinc-950;
+                border-radius: Theme.radius-sm;
+                Text {
+                    x: Theme.space-2; y: 4px; width: parent.width - Theme.space-4;
+                    text: root.confirmed != "" ? root.confirmed : "No reviewed actions yet.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-micro;
+                    wrap: word-wrap;
+                }
+            }
         }
-        Text {
-            x: Theme.space-3; y: 312px;
-            text: "Explanation";
-            color: Theme.text-secondary; font-size: Theme.font-micro;
-        }
-        Text {
-            x: Theme.space-3; y: 328px; width: parent.width - Theme.space-6;
-            text: root.explanation != "" ? root.explanation : "—";
-            color: Theme.text-primary;
-            font-size: Theme.font-micro;
-            wrap: word-wrap;
+
+        // AI panel. Interpretation is off until a key is entered; the exact body
+        // is shown before any send, and the source frame sits beside the answer.
+        Rectangle {
+            x: root.narrow ? 0 : panel-width + panel-gap;
+            y: 216px;
+            width: root.narrow ? parent.width : panel-width;
+            height: 480px;
+            background: Theme.content-surface;
+            border-radius: Theme.radius-sm;
+            Text {
+                x: Theme.space-3; y: 6px; width: parent.width - Theme.space-6;
+                text: "AI interpretation · BYOK · \{root.has-key ? "on" : "off"}";
+                color: Theme.text-primary;
+                font-size: Theme.font-body;
+                overflow: elide;
+            }
+            Text { x: Theme.space-3; y: 28px; text: "Endpoint"; color: Theme.text-secondary; font-size: Theme.font-micro; }
+            Rectangle {
+                x: Theme.space-3; y: 40px; width: parent.width - Theme.space-6; height: 40px;
+                background: Theme.zinc-800;
+                border-radius: Theme.radius-sm;
+                TextInput {
+                    x: Theme.space-2; y: 10px; width: parent.width - Theme.space-3;
+                    text <=> root.endpoint;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-label;
+                }
+            }
+            Text { x: Theme.space-3; y: 88px; text: "API key (memory only, never stored)"; color: Theme.text-secondary; font-size: Theme.font-micro; }
+            Rectangle {
+                x: Theme.space-3; y: 100px; width: parent.width - Theme.space-6; height: 40px;
+                background: Theme.zinc-800;
+                border-radius: Theme.radius-sm;
+                TextInput {
+                    x: Theme.space-2; y: 10px; width: parent.width - Theme.space-3;
+                    text <=> root.key;
+                    input-type: password;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-label;
+                    edited => { root.key-edited(self.text); }
+                }
+            }
+            Text { x: Theme.space-3; y: 148px; text: "Note"; color: Theme.text-secondary; font-size: Theme.font-micro; }
+            Rectangle {
+                x: Theme.space-3; y: 160px; width: parent.width - Theme.space-6; height: 40px;
+                background: Theme.zinc-800;
+                border-radius: Theme.radius-sm;
+                TextInput {
+                    x: Theme.space-2; y: 10px; width: parent.width - Theme.space-3;
+                    text <=> root.note;
+                    color: Theme.text-primary;
+                    font-size: Theme.font-label;
+                }
+            }
+            Rectangle {
+                x: Theme.space-3; y: 212px; width: 120px; height: 40px;
+                background: preview-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Show payload";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                Text {
+                    width: 100%; height: 100%; text: "Show payload";
+                    color: preview-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                preview-touch := TouchArea { clicked => { root.preview-payload(); } }
+            }
+            Rectangle {
+                x: 148px; y: 212px; width: 96px; height: 40px;
+                background: explain-touch.pressed ? Theme.accent : Theme.glass-card-dark;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.card-edge;
+                accessible-role: button;
+                accessible-label: "Explain frame";
+                animate background {
+                    duration: Theme.motion-press;
+                    easing: cubic-bezier(0.2, 0, 0, 1);
+                }
+                Text {
+                    width: 100%; height: 100%; text: "Explain";
+                    color: explain-touch.pressed ? Theme.zinc-950 : Theme.text-primary;
+                    font-size: Theme.font-label;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+                explain-touch := TouchArea { clicked => { root.explain-frame(); } }
+            }
+            Text {
+                x: Theme.space-3; y: 258px; width: parent.width - Theme.space-6;
+                text: root.status;
+                color: root.has-key ? Theme.text-secondary : Theme.status-warn;
+                font-size: Theme.font-micro;
+                wrap: word-wrap;
+            }
+            Text {
+                x: Theme.space-3; y: 294px;
+                text: "Exact payload (review before send)";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Rectangle {
+                x: Theme.space-3; y: 308px; width: parent.width - Theme.space-6; height: 54px;
+                background: Theme.zinc-950;
+                border-radius: Theme.radius-sm;
+                Text {
+                    x: Theme.space-2; y: 4px; width: parent.width - Theme.space-3;
+                    text: root.preview != "" ? root.preview : "Select a frame, then show the payload.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-micro;
+                    wrap: word-wrap;
+                }
+            }
+            Text {
+                x: Theme.space-3; y: 368px; width: parent.width - Theme.space-6;
+                text: "Source frame: \{root.selected-hex}";
+                color: Theme.text-secondary;
+                font-size: Theme.font-micro;
+                font-family: Theme.numeral-font;
+                wrap: word-wrap;
+            }
+            Text {
+                x: Theme.space-3; y: 404px;
+                text: "Explanation";
+                color: Theme.text-secondary; font-size: Theme.font-micro;
+            }
+            Text {
+                x: Theme.space-3; y: 420px; width: parent.width - Theme.space-6;
+                text: root.explanation != "" ? root.explanation : "—";
+                color: Theme.text-primary;
+                font-size: Theme.font-micro;
+                wrap: word-wrap;
+            }
         }
     }
 }

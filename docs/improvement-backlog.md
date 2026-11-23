@@ -54,6 +54,11 @@ Status legend: `Open` — actionable, unstarted; `Deferred` — parked minor, lo
 | Parity that varies by host OS. | Research summary §8 (Avoid) | High — one binary per platform, same capability | Guardrail (blocked on CI/device) | Task 12 / CI | Same feature matrix passes on Linux, macOS, Windows, and Android. |
 | Nested update paths. | Research summary §8 (Avoid) | Medium — unusable deep menus | Guardrail | Task 8 / Task 9 | Four-destination IA; firmware shows installed version only, no nested update maze. |
 | Hidden familiar metrics. | Research summary §8 (Avoid) | Medium — at-a-glance readings not visible | Guardrail | Task 9 | Today/Device surface every decoded read the current codecs support (≈14–18 keys depending on the watch's replies) with no gating; cards are reorderable. The design's "all 20 reads" is a target, not a verified shipped count (final review M3). |
+| Sync refresh still blocks the Slint UI thread during the redesigned "Syncing" state (≈6–7 s); only a one-turn "Syncing…" paint precedes the blocking read. | UI redesign Task 4 (2026-11-23); duplicates row 21 | Medium — UI freezes during refresh | Open — NOT ADDRESSED | Task 12 follow-up | See row 21. Refresh completes <1 s or runs fully off the UI thread while the new status states stay responsive. |
+| The failure label "Sync failed — retry" is elided at the 360dp narrow viewport; the red status colour and last-error line still carry the state. | UI redesign Task 4 review (2026-11-23) | Low — failure copy truncated on narrow | Open | UI follow-up | The full label fits at 360dp, or an equally clear short label is shown, with a rendered narrow-viewport check. |
+| Control-sheet open/Confirm/Cancel/outside-click, export Copy-to-clipboard and SVG icon rendering were verified by source/state inspection only; no runtime interaction or screenshot assertion exists. | UI redesign Tasks 1/4/5 reports | Medium — interaction/visual regressions uncaught | Open (verification-only) | UI follow-up | A headless capture or device run exercises two-step confirm, outside-click cancel, exact clipboard contents and icon rendering. |
+| Anti-slop source scan is clean and workspace tests pass, but no rendered screenshot of the four redesigned panes exists; window instantiation is confirmed headlessly (`SLINT_BACKEND=testing`). | UI redesign Task 6 (2026-11-24) | Medium — visual result unverified by eye | Open (verification-only) | UI follow-up | A rendered capture at 900×600 desktop and 360dp Android confirms the redesign; Slint 1.19 has no built-in framebuffer→PNG capture API without new code/deps. |
+| Android CI/device verification of the redesigned shell (layout, icons, motion) remains unrun; host-only checks cannot cover it. | UI redesign handoff (2026-11-24); see rows 14–16 | High — redesign unproven on target device | Open (CI-only / device-only) | Task 12 / CI | CI `cargo check -p openwatch-android` + Gradle AAB, and a physical-device run of the four panes. |
 
 ## Cycle log
 
@@ -63,6 +68,13 @@ Status legend: `Open` — actionable, unstarted; `Deferred` — parked minor, lo
 - **Implement:** `docs/superpowers/specs/2026-11-22-openwatch-design.md` line 103 removed quiet hours `0x2C` from the confirmed-write group and clarified that its `L` status is read-only; `0x71` (DND) remains the verified write path.
 - **Test:** doc-only change; no code test added. `cargo fmt --all -- --check` and `cargo test --workspace` run as regression gates.
 - **Persist:** backlog row flipped to `Closed`, `CHANGELOG.md` updated, commit `docs: improvement backlog and first cycle`.
+
+### Cycle 3 — UI redesign verification and handoff (Task 6)
+
+- **Picked:** final task of the 2026-11-23 UI redesign plan — verify and document Tasks 1–5 (no product-code changes).
+- **Verify:** source anti-slop scan passed — no purple/gradient/glow/emoji/bounce/overshoot tokens, one easing family, eight colourised SVG icons, near-black text on accent fills, all motion/accessibility tokens present. `cargo test --workspace` (headless `SLINT_BACKEND=testing`): 115 passed / 0 failed / 1 ignored (live hardware), including the `AppWindow::new()` window-construction test; no wrapper timeout. Prior controller run of `cargo fmt --all -- --check` clean. `cargo clippy --workspace -- -D warnings` not run in this task.
+- **Open:** blocking refresh, narrow failure-label elision, runtime clipboard/modal/SVG visual checks, Android CI/device verification (rows above).
+- **Persist:** `README.md`, this backlog and `docs/HANDOFF.md` updated; commit `docs: UI redesign verification and handoff`; report at `.superpowers/sdd/2026-11-23-ui-redesign/task-6-report.md`.
 
 ### Cycle 2 — final review integration gaps (fix wave)
 

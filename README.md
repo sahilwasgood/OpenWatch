@@ -29,6 +29,17 @@ One Rust workspace builds all four targets.
 - `crates/desktop` — Slint host for Linux, macOS and Windows.
 - `crates/android` — Slint host for Android.
 
+## User interface
+
+The four Slint panes (Today, Device, Workbench, Data) share one restrained zinc/blue token
+language: real two-step write controls, distinct sync states with last-sync time and failure detail,
+a responsive shell (sidebar on wide windows, bottom navigation below 700px, 360dp minimum), designed
+empty/error states, a Copy action for exports, eight colourised SVG icons and one motion-easing
+family. Interactive labels are ≥12px, touch targets ≥40px, and reduced-transparency / high-contrast
+toggles live in Data settings. Verification: `cargo test --workspace` — 115 passed / 1 ignored
+(live-hardware test); `cargo fmt --all -- --check` clean. No rendered screenshot exists yet.
+See [the improvement backlog](docs/improvement-backlog.md) and [handoff](docs/HANDOFF.md) for open items.
+
 ## Build
 
 Requires a stable Rust toolchain (edition 2021).

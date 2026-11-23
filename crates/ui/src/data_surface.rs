@@ -6,6 +6,9 @@ use slint::{ModelRc, SharedString, VecModel};
 use crate::bridge::AppError;
 use crate::{AppState, AppWindow};
 
+/// Only the newest readings are plotted; older history stays in the store.
+pub const MAX_CHART_POINTS: usize = 24;
+
 /// Local display preference. Not sent to the watch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Units {
@@ -50,6 +53,8 @@ pub struct DataView {
     selected: usize,
     points: Vec<f64>,
     labels: Vec<String>,
+    axis_min: String,
+    axis_max: String,
     summary: String,
     preview: String,
     status: String,
@@ -64,6 +69,8 @@ impl Default for DataView {
             selected: 0,
             points: Vec::new(),
             labels: Vec::new(),
+            axis_min: "0".into(),
+            axis_max: "1".into(),
             summary: "No numeric history yet".into(),
             preview: String::new(),
             status: "Local store · nothing leaves this device".into(),
@@ -113,28 +120,38 @@ impl DataView {
     fn recompute(&mut self) {
         match self.series.get(self.selected) {
             Some(current) => {
-                let peak = current
-                    .values
+                let window =
+                    &current.values[current.values.len().saturating_sub(MAX_CHART_POINTS)..];
+                let numbers: Vec<f64> = window
                     .iter()
                     .filter_map(|(_, value)| value.parse::<f64>().ok())
-                    .fold(0.0_f64, f64::max);
-                self.points = current
-                    .values
+                    .collect();
+                // A zero-based peak flattens 50–60 ranges; normalize between
+                // the actual min and max of the visible window instead.
+                let min = numbers.iter().copied().fold(f64::INFINITY, f64::min);
+                let max = numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                let span = max - min;
+                self.points = numbers
                     .iter()
-                    .map(|(_, value)| {
-                        let number = value.parse::<f64>().unwrap_or(0.0);
-                        if peak <= 0.0 {
-                            0.0
+                    .map(|number| {
+                        if span > 0.0 {
+                            ((number - min) / span).clamp(0.0, 1.0)
                         } else {
-                            (number / peak).clamp(0.0, 1.0)
+                            0.5 // a flat series sits mid-axis, not on the floor
                         }
                     })
                     .collect();
-                self.labels = current
-                    .values
-                    .iter()
-                    .map(|(_, value)| value.clone())
-                    .collect();
+                self.labels = window.iter().map(|(_, value)| value.clone()).collect();
+                self.axis_min = if min.is_finite() {
+                    format!("{min}")
+                } else {
+                    "0".into()
+                };
+                self.axis_max = if max.is_finite() {
+                    format!("{max}")
+                } else {
+                    "1".into()
+                };
                 let latest = current
                     .values
                     .last()
@@ -149,6 +166,8 @@ impl DataView {
             None => {
                 self.points.clear();
                 self.labels.clear();
+                self.axis_min = "0".into();
+                self.axis_max = "1".into();
                 self.summary = "No numeric history yet".into();
             }
         }
@@ -174,6 +193,14 @@ impl DataView {
 
     pub fn labels(&self) -> &[String] {
         &self.labels
+    }
+
+    pub fn axis_min(&self) -> &str {
+        &self.axis_min
+    }
+
+    pub fn axis_max(&self) -> &str {
+        &self.axis_max
     }
 
     pub fn summary(&self) -> &str {
@@ -214,7 +241,7 @@ impl DataView {
         match result {
             Ok(text) if !text.is_empty() => {
                 self.preview = text;
-                self.status = format!("{kind} export ready — copy it from the preview");
+                self.status = format!("{kind} export ready — use Copy");
             }
             Ok(_) => {
                 self.preview.clear();
@@ -225,6 +252,12 @@ impl DataView {
                 self.status = error.to_string();
             }
         }
+    }
+
+    /// Confirmation shown after the surface's Copy button writes to the
+    /// platform clipboard (Slint's native TextInput::copy).
+    pub fn mark_copied(&mut self) {
+        self.status = "Copied to clipboard".into();
     }
 
     /// First step: show the warning; nothing is erased yet.
@@ -275,6 +308,8 @@ impl DataView {
         )));
         window.set_data_selected_series(self.selected as i32);
         window.set_data_series_summary(SharedString::from(self.summary.as_str()));
+        window.set_data_axis_min(SharedString::from(self.axis_min.as_str()));
+        window.set_data_axis_max(SharedString::from(self.axis_max.as_str()));
         window.set_data_preview(SharedString::from(self.preview.as_str()));
         window.set_data_status(SharedString::from(self.status.as_str()));
         window.set_data_pending_delete(self.pending_delete);
@@ -311,7 +346,9 @@ mod tests {
         view.reload(&state).unwrap();
         assert_eq!(view.keys().len(), 1, "only numeric series are charted");
         assert_eq!(view.keys()[0].as_str(), "steps");
-        assert_eq!(view.points(), [0.5, 1.0]);
+        assert_eq!(view.points(), [0.0, 1.0]);
+        assert_eq!(view.axis_min(), "50");
+        assert_eq!(view.axis_max(), "100");
         assert_eq!(view.labels(), ["50", "100"]);
         assert!(view.summary().contains("latest 100"));
     }
